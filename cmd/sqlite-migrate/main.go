@@ -8,7 +8,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
+	migrate "github.com/antoniskalou/sqlite-migrate"
 	"github.com/urfave/cli/v3"
 	_ "modernc.org/sqlite"
 )
@@ -16,6 +18,18 @@ import (
 const defaultMigrationDir = "sql"
 
 func main() {
+	dbPathArg := cli.StringArg{
+		Name:     "dbpath",
+		Required: true,
+	}
+
+	var target *int
+	targetFlag := cli.IntFlag{
+		Name:        "target",
+		Usage:       "specify target version",
+		Destination: target,
+	}
+
 	cmd := &cli.Command{
 		Name:  "sqlite-migrate",
 		Usage: "migrate SQLite databases",
@@ -28,26 +42,29 @@ func main() {
 				},
 			},
 			{
-				Name:  "status",
-				Usage: "print migration status of the database",
+				Name:      "status",
+				Usage:     "print migration status of the database",
+				Arguments: []cli.Argument{&dbPathArg},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					fmt.Println("status")
-					return nil
+					return cmdStatus(cmd.StringArg("dbpath"))
 				},
 			},
 			{
-				Name:  "deploy",
-				Usage: "apply all pending migrations",
+				Name:      "deploy",
+				Usage:     "apply all pending migrations",
+				Arguments: []cli.Argument{&dbPathArg},
+				Flags:     []cli.Flag{&targetFlag},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return nil
+					return cmdDeploy(cmd.StringArg("dbpath"), target)
 				},
 			},
 			{
-				Name:  "rollback",
-				Usage: "rollback all applied migrations",
+				Name:      "rollback",
+				Usage:     "rollback all applied migrations",
+				Arguments: []cli.Argument{&dbPathArg},
+				Flags:     []cli.Flag{&targetFlag},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					fmt.Println("rollback")
-					return nil
+					return cmdRollback(cmd.StringArg("dbpath"), target)
 				},
 			},
 		},
@@ -99,6 +116,67 @@ func cmdInit() error {
 	}
 
 	fmt.Println("initialized migration directory at " + absDir)
+	return nil
+}
+
+func cmdStatus(path string) error {
+	db, err := connectDB(path)
+	if err != nil {
+		return fmt.Errorf("failed to open db at %s: %v", path, err)
+	}
+
+	status, err := migrate.Status(db)
+	if err != nil {
+		return fmt.Errorf("failed to get db status: %v", err)
+	}
+
+	// TODO: figure out nicer formatting
+	fmt.Println("Version:", status.Version)
+
+	fmt.Println("Applied:")
+	if len(status.Applied) > 0 {
+		fmt.Println("\t" + strings.Join(status.Applied, "\n\t"))
+	} else {
+		fmt.Println("\tNONE")
+	}
+
+	fmt.Println("Pending:")
+	if len(status.Pending) > 0 {
+		fmt.Println("\t" + strings.Join(status.Pending, "\n\t"))
+	} else {
+		fmt.Println("\tNONE")
+	}
+
+	return nil
+}
+
+func cmdDeploy(path string, target *int) error {
+	db, err := connectDB(path)
+	if err != nil {
+		return fmt.Errorf("failed to open db at %s: %v", path, err)
+	}
+
+	version, err := migrate.Deploy(db, target)
+	if err != nil {
+		return fmt.Errorf("deploy failed: %v", err)
+	}
+
+	fmt.Println("Migrated to version ", version)
+	return nil
+}
+
+func cmdRollback(path string, target *int) error {
+	db, err := connectDB(path)
+	if err != nil {
+		return fmt.Errorf("failed to open db at %s: %v", path, err)
+	}
+
+	version, err := migrate.Rollback(db, target)
+	if err != nil {
+		return fmt.Errorf("rollback failed: %v", err)
+	}
+
+	fmt.Println("Rolled back to version ", version)
 	return nil
 }
 

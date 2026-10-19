@@ -1,6 +1,9 @@
 package migrate
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+)
 
 // TODO: allow setting this
 const MigrationDir = "sql"
@@ -11,11 +14,13 @@ type DBStatus struct {
 	Pending []string
 }
 
-func Deploy(db *sql.DB) (int, error) {
+func Deploy(db *sql.DB, target *int) (int, error) {
+	fmt.Println("deploying to version", target)
 	panic("unimplemented")
 }
 
-func Rollback(db *sql.DB) (int, error) {
+func Rollback(db *sql.DB, target *int) (int, error) {
+	fmt.Println("rolling back to version", target)
 	panic("unimplemented")
 }
 
