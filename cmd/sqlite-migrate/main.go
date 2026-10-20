@@ -22,6 +22,8 @@ func main() {
 		Required: true,
 	}
 
+	migrator := &migrate.Migrator{RootDir: defaultMigrationDir}
+
 	cmd := &cli.Command{
 		Name:  "sqlite-migrate",
 		Usage: "migrate SQLite databases",
@@ -38,7 +40,7 @@ func main() {
 				Usage:     "print migration status of the database",
 				Arguments: []cli.Argument{&dbPathArg},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdStatus(cmd.StringArg("dbpath"))
+					return cmdStatus(migrator, cmd.StringArg("dbpath"))
 				},
 			},
 			{
@@ -55,7 +57,7 @@ func main() {
 						t := cmd.Int("target")
 						target = &t
 					}
-					return cmdDeploy(cmd.StringArg("dbpath"), target)
+					return cmdDeploy(migrator, cmd.StringArg("dbpath"), target)
 				},
 			},
 			{
@@ -72,7 +74,7 @@ func main() {
 						t := cmd.Int("target")
 						target = &t
 					}
-					return cmdRollback(cmd.StringArg("dbpath"), target)
+					return cmdRollback(migrator, cmd.StringArg("dbpath"), target)
 				},
 			},
 		},
@@ -89,6 +91,7 @@ func connectDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open: %w", err)
 	}
 	// TODO: make sure path dir always exists
+	// TODO: don't create the DB if it doesn't exist, unless we're running deploy
 
 	return db, nil
 }
@@ -125,14 +128,14 @@ func cmdInit() error {
 	return nil
 }
 
-func cmdStatus(path string) error {
+func cmdStatus(migrator *migrate.Migrator, path string) error {
 	db, err := connectDB(path)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
 	defer db.Close()
 
-	status, err := migrate.Status(db)
+	status, err := migrator.Status(db)
 	if err != nil {
 		return fmt.Errorf("failed to get db status: %w", err)
 	}
@@ -157,14 +160,14 @@ func cmdStatus(path string) error {
 	return nil
 }
 
-func cmdDeploy(path string, target *int) error {
+func cmdDeploy(migrator *migrate.Migrator, path string, target *int) error {
 	db, err := connectDB(path)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
 	defer db.Close()
 
-	version, err := migrate.Deploy(db, target)
+	version, err := migrator.Deploy(db, target)
 	if err != nil {
 		return fmt.Errorf("deploy failed: %w", err)
 	}
@@ -173,14 +176,14 @@ func cmdDeploy(path string, target *int) error {
 	return nil
 }
 
-func cmdRollback(path string, target *int) error {
+func cmdRollback(migrator *migrate.Migrator, path string, target *int) error {
 	db, err := connectDB(path)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
 	defer db.Close()
 
-	version, err := migrate.Rollback(db, target)
+	version, err := migrator.Rollback(db, target)
 	if err != nil {
 		return fmt.Errorf("rollback failed: %w", err)
 	}
