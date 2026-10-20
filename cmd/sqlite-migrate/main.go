@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -21,13 +20,6 @@ func main() {
 	dbPathArg := cli.StringArg{
 		Name:     "dbpath",
 		Required: true,
-	}
-
-	var target *int
-	targetFlag := cli.IntFlag{
-		Name:        "target",
-		Usage:       "specify target version",
-		Destination: target,
 	}
 
 	cmd := &cli.Command{
@@ -53,8 +45,16 @@ func main() {
 				Name:      "deploy",
 				Usage:     "apply all pending migrations",
 				Arguments: []cli.Argument{&dbPathArg},
-				Flags:     []cli.Flag{&targetFlag},
+				Flags: []cli.Flag{&cli.IntFlag{
+					Name:  "target",
+					Usage: "specify target version",
+				}},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
+					var target *int
+					if cmd.IsSet("target") {
+						t := cmd.Int("target")
+						target = &t
+					}
 					return cmdDeploy(cmd.StringArg("dbpath"), target)
 				},
 			},
@@ -62,8 +62,16 @@ func main() {
 				Name:      "rollback",
 				Usage:     "rollback all applied migrations",
 				Arguments: []cli.Argument{&dbPathArg},
-				Flags:     []cli.Flag{&targetFlag},
+				Flags: []cli.Flag{&cli.IntFlag{
+					Name:  "target",
+					Usage: "specify target version",
+				}},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
+					var target *int
+					if cmd.IsSet("target") {
+						t := cmd.Int("target")
+						target = &t
+					}
 					return cmdRollback(cmd.StringArg("dbpath"), target)
 				},
 			},
@@ -77,11 +85,9 @@ func main() {
 
 func connectDB(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", path)
-
 	if err != nil {
-		return nil, fmt.Errorf("failed to open: %v", err)
+		return nil, fmt.Errorf("failed to open: %w", err)
 	}
-
 	// TODO: make sure path dir always exists
 
 	return db, nil
@@ -97,22 +103,22 @@ func cmdInit() error {
 
 	err := os.MkdirAll(defaultMigrationDir, 0o755)
 	if err != nil {
-		return fmt.Errorf("failed to create migration dir: %v", err)
+		return fmt.Errorf("failed to create migration dir: %w", err)
 	}
 
-	up := path.Join(defaultMigrationDir, "000_init.up.sql")
+	up := filepath.Join(defaultMigrationDir, "000_init.up.sql")
 	if err := writeIfNotExists(up, sql); err != nil {
-		return fmt.Errorf("failed to write "+up+" migration", err)
+		return fmt.Errorf("failed to write %s migration: %w", up, err)
 	}
 
-	down := path.Join(defaultMigrationDir, "000_init.down.sql")
+	down := filepath.Join(defaultMigrationDir, "000_init.down.sql")
 	if err := writeIfNotExists(down, sql); err != nil {
-		return fmt.Errorf("failed to write "+down+" migration", err)
+		return fmt.Errorf("failed to write %s migration: %w", down, err)
 	}
 
 	absDir, err := filepath.Abs(defaultMigrationDir)
 	if err != nil {
-		return fmt.Errorf("failed to resolve migration directory: %v", err)
+		return fmt.Errorf("failed to resolve migration directory: %w", err)
 	}
 
 	fmt.Println("initialized migration directory at " + absDir)
@@ -122,12 +128,13 @@ func cmdInit() error {
 func cmdStatus(path string) error {
 	db, err := connectDB(path)
 	if err != nil {
-		return fmt.Errorf("failed to open db at %s: %v", path, err)
+		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
+	defer db.Close()
 
 	status, err := migrate.Status(db)
 	if err != nil {
-		return fmt.Errorf("failed to get db status: %v", err)
+		return fmt.Errorf("failed to get db status: %w", err)
 	}
 
 	// TODO: figure out nicer formatting
@@ -153,12 +160,13 @@ func cmdStatus(path string) error {
 func cmdDeploy(path string, target *int) error {
 	db, err := connectDB(path)
 	if err != nil {
-		return fmt.Errorf("failed to open db at %s: %v", path, err)
+		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
+	defer db.Close()
 
 	version, err := migrate.Deploy(db, target)
 	if err != nil {
-		return fmt.Errorf("deploy failed: %v", err)
+		return fmt.Errorf("deploy failed: %w", err)
 	}
 
 	fmt.Println("Migrated to version ", version)
@@ -168,12 +176,13 @@ func cmdDeploy(path string, target *int) error {
 func cmdRollback(path string, target *int) error {
 	db, err := connectDB(path)
 	if err != nil {
-		return fmt.Errorf("failed to open db at %s: %v", path, err)
+		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
+	defer db.Close()
 
 	version, err := migrate.Rollback(db, target)
 	if err != nil {
-		return fmt.Errorf("rollback failed: %v", err)
+		return fmt.Errorf("rollback failed: %w", err)
 	}
 
 	fmt.Println("Rolled back to version ", version)
@@ -188,9 +197,13 @@ func writeIfNotExists(filename, content string) error {
 		}
 		return err
 	}
-
 	defer f.Close()
 
-	_, err = f.WriteString(content)
-	return err
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		_ = os.Remove(filename)
+		return err
+	}
+
+	return nil
 }
