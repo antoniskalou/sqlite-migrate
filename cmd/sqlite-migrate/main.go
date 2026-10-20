@@ -22,7 +22,10 @@ func main() {
 		Required: true,
 	}
 
-	migrator := &migrate.Migrator{RootDir: defaultMigrationDir}
+	migrator := &migrate.Migrator{
+		RootDir: defaultMigrationDir,
+		Logger:  log.New(os.Stdout, "[migrate] ", log.LstdFlags),
+	}
 
 	cmd := &cli.Command{
 		Name:  "sqlite-migrate",

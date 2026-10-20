@@ -3,6 +3,7 @@ package migrate
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,7 @@ import (
 
 type Migrator struct {
 	RootDir string
+	Logger  *log.Logger
 }
 
 type MigrationStatus struct {
@@ -37,33 +39,18 @@ func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
 		}
 
 		if i < version {
-			fmt.Println(path + " already applied, skipping...")
+			m.log("%s already applied, skipping", path)
 			continue
 		}
 
-		tx, err := db.Begin()
-		if err != nil {
+		nextVersion := version + 1
+		if err := m.applyMigration(db, path, nextVersion); err != nil {
 			return version, err
 		}
-		defer tx.Rollback()
-
-		fmt.Println("running migration:", path)
-		if err := runSQLFile(tx, path); err != nil {
-			return version, err
-		}
-
-		version++
-
-		if err := setUserVersion(tx, version); err != nil {
-			return version, err
-		}
-
-		if err := tx.Commit(); err != nil {
-			return version, fmt.Errorf("commit migration: %w", err)
-		}
+		version = nextVersion
 	}
 
-	fmt.Println("final version:", version)
+	m.log("final version: %d", version)
 	return version, nil
 }
 
@@ -85,22 +72,18 @@ func (m *Migrator) Rollback(db *sql.DB, target *int) (int, error) {
 		}
 
 		if i+1 != version {
+			m.log("%s already applied, skipping", path)
 			continue
 		}
 
-		fmt.Println("running migration:", path)
-		if err := runSQLFile(db, path); err != nil {
-			fmt.Println(path + " already applied, skipping...")
+		nextVersion := version - 1
+		if err := m.applyMigration(db, path, nextVersion); err != nil {
 			return version, err
 		}
-
-		version--
-		if err := setUserVersion(db, version); err != nil {
-			return version, fmt.Errorf("migration applied, pragma user_version failed: %w", err)
-		}
+		version = nextVersion
 	}
 
-	fmt.Println("final version:", version)
+	m.log("final version: %d", version)
 	return version, nil
 }
 
@@ -135,6 +118,42 @@ func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 		Applied: applied,
 		Pending: pending,
 	}, nil
+}
+
+func (m *Migrator) log(format string, v ...any) {
+	if m.Logger != nil {
+		m.Logger.Printf(format, v...)
+	}
+}
+
+func (m *Migrator) applyMigration(
+	db *sql.DB,
+	path string,
+	version int,
+) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if m.Logger != nil {
+		m.Logger.Printf("running migration: %s", path)
+	}
+
+	if err := runSQLFile(tx, path); err != nil {
+		return err
+	}
+
+	if err := setUserVersion(tx, version); err != nil {
+		return fmt.Errorf("set migration version to %d: %w", version, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration %s: %w", path, err)
+	}
+
+	return nil
 }
 
 func getUserVersion(db *sql.DB) (int, error) {
