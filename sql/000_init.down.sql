@@ -1,6 +1,1 @@
-begin;
-
-	-- code goes here
-
-	commit;
-	
+-- code goes here

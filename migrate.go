@@ -41,15 +41,25 @@ func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
 			continue
 		}
 
+		tx, err := db.Begin()
+		if err != nil {
+			return version, err
+		}
+		defer tx.Rollback()
+
 		fmt.Println("running migration:", path)
-		if err := runSQLFile(db, path); err != nil {
-			return 0, err
+		if err := runSQLFile(tx, path); err != nil {
+			return version, err
 		}
 
-		// SQL applied
 		version++
-		if err := setUserVersion(db, version); err != nil {
-			return version, fmt.Errorf("migration applied, pragma user_version failed: %w", err)
+
+		if err := setUserVersion(tx, version); err != nil {
+			return version, err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return version, fmt.Errorf("commit migration: %w", err)
 		}
 	}
 
@@ -136,13 +146,17 @@ func getUserVersion(db *sql.DB) (int, error) {
 	return version, nil
 }
 
-func setUserVersion(db *sql.DB, version int) error {
+type sqlExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func setUserVersion(db sqlExecutor, version int) error {
 	// prepared statements don't work for pragma
 	_, err := db.Exec("pragma user_version = " + strconv.Itoa(version))
 	return err
 }
 
-func runSQLFile(db *sql.DB, file string) error {
+func runSQLFile(db sqlExecutor, file string) error {
 	sqlBytes, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("read SQL file %s: %w", file, err)

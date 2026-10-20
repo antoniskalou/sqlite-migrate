@@ -97,12 +97,7 @@ func connectDB(path string) (*sql.DB, error) {
 }
 
 func cmdInit() error {
-	const sql = `begin;
-
-	-- code goes here
-
-	commit;
-	`
+	const sql = `-- code goes here`
 
 	err := os.MkdirAll(defaultMigrationDir, 0o755)
 	if err != nil {
