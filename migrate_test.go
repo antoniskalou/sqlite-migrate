@@ -2,8 +2,6 @@ package migrate
 
 import (
 	"database/sql"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -52,10 +50,7 @@ func newTestMigrator(t *testing.T) (*Migrator, *sql.DB) {
 
 	db.SetMaxOpenConns(1)
 
-	m := &Migrator{
-		RootDir: root,
-		Logger:  log.New(io.Discard, "", 0),
-	}
+	m := &Migrator{RootDir: root}
 
 	return m, db
 }
@@ -253,12 +248,12 @@ func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	if err == nil {
 		t.Fatal("Deploy() succeeded, want migration error")
 	}
-	if got != 0 {
-		t.Errorf("Deploy() = %d, want 0", got)
+	if got != 1 {
+		t.Errorf("Deploy() = %d, want 1", got)
 	}
 
-	assertVersion(t, m, db, 0)
-	assertTableExists(t, db, "t1", false)
+	assertVersion(t, m, db, 1)
+	assertTableExists(t, db, "t1", true)
 	assertTableExists(t, db, "t2", false)
 }
 
@@ -280,6 +275,7 @@ func TestRollbackTargetValidation(t *testing.T) {
 			if got != 2 {
 				t.Errorf("Rollback(%d) = %d, want 2", target, got)
 			}
+			assertVersion(t, m, db, 2)
 		})
 	}
 }
@@ -346,9 +342,70 @@ func TestInvalidDeployTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
 	for _, target := range []int{-1, 3} {
-		_, err := m.Deploy(db, &target)
+		got, err := m.Deploy(db, &target)
 		if err == nil {
 			t.Errorf("Deploy(%d) succeeded, want error", target)
 		}
+		if got != 0 {
+			t.Errorf("Deploy(%d) = %d, want 0", target, got)
+		}
+	}
+}
+
+func TestDeployPreviousTarget(t *testing.T) {
+	m, db := newTestMigrator(t)
+
+	// deploy all first
+	version, err := m.Deploy(db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// current version
+	got, err := m.Deploy(db, &version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != version {
+		t.Errorf("Deploy(%d) = %d, want %d", version, got, version)
+	}
+
+	// previous version
+	target := version - 1
+	got, err = m.Deploy(db, &target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != version {
+		t.Errorf("Deploy(%d) = %d, want %d", target, got, version)
+	}
+}
+
+func TestPreviousRollbackTarget(t *testing.T) {
+	m, db := newTestMigrator(t)
+
+	// rollback all first
+	version, err := m.Rollback(db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// current version
+	got, err := m.Rollback(db, &version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != version {
+		t.Errorf("Deploy(%d) = %d, want %d", version, got, version)
+	}
+
+	// next version
+	target := version + 1
+	got, err = m.Rollback(db, &target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != version {
+		t.Errorf("Deploy(%d) = %d, want %d", target, got, version)
 	}
 }

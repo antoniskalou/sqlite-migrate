@@ -30,11 +30,15 @@ func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
 
 	migrations, err := migrations(m.RootDir, "up")
 	if err != nil {
-		return 0, err
+		return version, err
+	}
+
+	if !isValidTarget(target, len(migrations)) {
+		return version, fmt.Errorf("invalid target version: %d", *target)
 	}
 
 	for i, path := range migrations {
-		if target != nil && version == *target {
+		if target != nil && version >= *target {
 			break
 		}
 
@@ -62,12 +66,16 @@ func (m *Migrator) Rollback(db *sql.DB, target *int) (int, error) {
 
 	migrations, err := migrations(m.RootDir, "down")
 	if err != nil {
-		return 0, err
+		return version, err
+	}
+
+	if !isValidTarget(target, len(migrations)) {
+		return version, fmt.Errorf("invalid target version: %d", *target)
 	}
 
 	// we iterate through rollbacks backwards
 	for i, path := range slices.Backward(migrations) {
-		if target != nil && version == *target {
+		if target != nil && version <= *target {
 			break
 		}
 
@@ -137,9 +145,7 @@ func (m *Migrator) applyMigration(
 	}
 	defer tx.Rollback()
 
-	if m.Logger != nil {
-		m.Logger.Printf("running migration: %s", path)
-	}
+	m.log("running migration: %s", path)
 
 	if err := runSQLFile(tx, path); err != nil {
 		return err
@@ -156,6 +162,10 @@ func (m *Migrator) applyMigration(
 	return nil
 }
 
+func isValidTarget(target *int, numMigrations int) bool {
+	return target == nil || (*target >= 0 && *target <= numMigrations)
+}
+
 func getUserVersion(db *sql.DB) (int, error) {
 	var version int
 	err := db.QueryRow("pragma user_version").Scan(&version)
@@ -165,6 +175,7 @@ func getUserVersion(db *sql.DB) (int, error) {
 	return version, nil
 }
 
+// interface that allows us to pass a sql.DB or a sql.Tx to functions
 type sqlExecutor interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
