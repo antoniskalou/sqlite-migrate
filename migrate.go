@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -13,7 +14,7 @@ type Migrator struct {
 	RootDir string
 }
 
-type DBStatus struct {
+type MigrationStatus struct {
 	Version int
 	Applied []string
 	Pending []string
@@ -68,16 +69,14 @@ func (m *Migrator) Rollback(db *sql.DB, target *int) (int, error) {
 	}
 
 	// we iterate through rollbacks backwards
-	for i := len(migrations) - 1; i >= 0; i-- {
+	for i, path := range slices.Backward(migrations) {
 		if target != nil && version == *target {
 			break
 		}
 
-		if version <= 0 {
+		if i+1 != version {
 			continue
 		}
-
-		path := migrations[i]
 
 		fmt.Println("running migration:", path)
 		if err := runSQLFile(db, path); err != nil {
@@ -99,7 +98,7 @@ func (m *Migrator) Version(db *sql.DB) (int, error) {
 	return getUserVersion(db)
 }
 
-func (m *Migrator) Status(db *sql.DB) (*DBStatus, error) {
+func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 	version, err := getUserVersion(db)
 	if err != nil {
 		return nil, err
@@ -121,7 +120,7 @@ func (m *Migrator) Status(db *sql.DB) (*DBStatus, error) {
 		}
 	}
 
-	return &DBStatus{
+	return &MigrationStatus{
 		Version: version,
 		Applied: applied,
 		Pending: pending,

@@ -1,5 +1,6 @@
 # test SQL files
 sql/
+*.db
 
 # generated executables
 *.exe
