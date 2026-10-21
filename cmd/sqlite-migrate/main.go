@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
@@ -114,16 +115,35 @@ func logEvent(options *loggerOptions) func(migrate.Event) {
 	return func(e migrate.Event) {
 		switch e.Kind {
 		case migrate.EventSkip:
-			fmt.Printf("[SKIP] %s (already applied)\n", e.File)
+			fmt.Printf("%s %s %s\n",
+				skipStyle.Render("[SKIP]"),
+				e.File,
+				faintStyle.Render("(already applied)"),
+			)
 		case migrate.EventApply:
-			fmt.Printf("[%s] %s → user_version=%d\n",
-				strings.ToUpper(e.Direction), e.File, e.Version)
+			dir := strings.ToUpper(e.Direction)
+
+			dirStyle := upStyle
+			if dir == "DOWN" {
+				dirStyle = downStyle
+			}
+
+			fmt.Printf("%s %s %s\n",
+				dirStyle.Render("["+dir+"]"),
+				e.File,
+				cyanStyle.Render(fmt.Sprintf(
+					"→ user_version=%d", e.Version,
+				)),
+			)
 		case migrate.EventSQL:
 			if options.verbose {
-				fmt.Println(e.SQL)
+				fmt.Println(faintStyle.Render(e.SQL))
 			}
 		case migrate.EventDone:
-			fmt.Printf("[DONE] user_version=%d\n", e.Version)
+			fmt.Printf("%s user_version=%s\n",
+				doneStyle.Render("[DONE]"),
+				versionStyle.Render(strconv.Itoa(e.Version)),
+			)
 		default:
 			panic(fmt.Sprintf("unhandled event kind: %q", e.Kind))
 		}
