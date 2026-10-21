@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,15 +21,24 @@ type loggerOptions struct {
 	noColor bool
 }
 
+type commandContext struct {
+	renderer renderer
+	migrator *migrate.Migrator
+}
+
 func main() {
 	loggerOptions := loggerOptions{
 		verbose: false,
 		noColor: false,
 	}
+	renderer := newRenderer(&loggerOptions.noColor)
 
-	migrator := &migrate.Migrator{
-		RootDir: defaultMigrationDir,
-		OnEvent: logEvent(&loggerOptions),
+	commandCtx := commandContext{
+		renderer: renderer,
+		migrator: &migrate.Migrator{
+			RootDir: defaultMigrationDir,
+			OnEvent: logEvent(renderer, &loggerOptions),
+		},
 	}
 
 	dbPathArg := cli.StringArg{
@@ -58,7 +66,7 @@ func main() {
 				Name:  "init",
 				Usage: "initialize the SQL migration directory",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdInit()
+					return cmdInit(commandCtx)
 				},
 			},
 			{
@@ -66,7 +74,7 @@ func main() {
 				Usage:     "print migration status of the database",
 				Arguments: []cli.Argument{&dbPathArg},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdStatus(migrator, cmd.StringArg("dbpath"))
+					return cmdStatus(commandCtx, cmd.StringArg("dbpath"))
 				},
 			},
 			{
@@ -83,7 +91,7 @@ func main() {
 						t := cmd.Int("target")
 						target = &t
 					}
-					return cmdDeploy(migrator, cmd.StringArg("dbpath"), target)
+					return cmdDeploy(commandCtx, cmd.StringArg("dbpath"), target)
 				},
 			},
 			{
@@ -100,23 +108,20 @@ func main() {
 						t := cmd.Int("target")
 						target = &t
 					}
-					return cmdRollback(migrator, cmd.StringArg("dbpath"), target)
+					return cmdRollback(commandCtx, cmd.StringArg("dbpath"), target)
 				},
 			},
 		},
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		log.Fatal(err)
+		fmt.Printf("%s %v", renderer(errorStyle, "[ERR]"), err)
+		os.Exit(1)
 	}
 }
 
-func logEvent(options *loggerOptions) func(migrate.Event) {
-	noColorEnv := os.Getenv("NO_COLOR") != ""
-
+func logEvent(renderer renderer, options *loggerOptions) func(migrate.Event) {
 	return func(e migrate.Event) {
-		renderer := newRenderer(options.noColor || noColorEnv)
-
 		switch e.Kind {
 		case migrate.EventSkip:
 			fmt.Printf("%s %s %s\n",
@@ -162,7 +167,7 @@ func connectDB(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-func cmdInit() error {
+func cmdInit(ctx commandContext) error {
 	const sql = `-- code goes here`
 
 	err := os.MkdirAll(defaultMigrationDir, 0o755)
@@ -185,50 +190,68 @@ func cmdInit() error {
 		return fmt.Errorf("failed to resolve migration directory: %w", err)
 	}
 
-	fmt.Println("initialized migration directory at " + absDir)
+	fmt.Printf("%s Migration directory initialized at %s\n",
+		ctx.renderer(doneStyle, "[DONE]"),
+		absDir,
+	)
 	return nil
 }
 
-func cmdStatus(migrator *migrate.Migrator, path string) error {
+func cmdStatus(ctx commandContext, path string) error {
 	db, err := connectDB(path)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
 	defer db.Close()
 
-	status, err := migrator.Status(db)
+	status, err := ctx.migrator.Status(db)
 	if err != nil {
 		return fmt.Errorf("failed to get db status: %w", err)
 	}
 
-	// TODO: figure out nicer formatting
-	fmt.Println("Version:", status.Version)
+	applied := status.Applied
+	pending := status.Pending
 
-	fmt.Println("Applied:")
-	if len(status.Applied) > 0 {
-		fmt.Println("\t" + strings.Join(status.Applied, "\n\t"))
-	} else {
-		fmt.Println("\tNONE")
+	lines := []string{
+		"Database status",
+		"",
+		fmt.Sprintf("%-10s %s", "Version:", strconv.Itoa(status.Version)),
+		fmt.Sprintf("%-10s %s", "Pending:", strconv.Itoa(len(pending))),
+		"",
+		"Applied migrations:",
 	}
 
-	fmt.Println("Pending:")
-	if len(status.Pending) > 0 {
-		fmt.Println("\t" + strings.Join(status.Pending, "\n\t"))
+	if len(applied) == 0 {
+		lines = append(lines, "  (none)")
 	} else {
-		fmt.Println("\tNONE")
+		for _, migration := range applied {
+			lines = append(lines, "  ✓ "+migration)
+		}
 	}
+
+	lines = append(lines, "", "Pending migrations:")
+
+	if len(pending) == 0 {
+		lines = append(lines, "  (none)")
+	} else {
+		for _, migration := range pending {
+			lines = append(lines, "  • "+migration)
+		}
+	}
+
+	fmt.Print(strings.Join(lines, "\n"))
 
 	return nil
 }
 
-func cmdDeploy(migrator *migrate.Migrator, path string, target *int) error {
+func cmdDeploy(ctx commandContext, path string, target *int) error {
 	db, err := connectDB(path)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
 	defer db.Close()
 
-	_, err = migrator.Deploy(db, target)
+	_, err = ctx.migrator.Deploy(db, target)
 	if err != nil {
 		return fmt.Errorf("deploy failed: %w", err)
 	}
@@ -236,14 +259,14 @@ func cmdDeploy(migrator *migrate.Migrator, path string, target *int) error {
 	return nil
 }
 
-func cmdRollback(migrator *migrate.Migrator, path string, target *int) error {
+func cmdRollback(ctx commandContext, path string, target *int) error {
 	db, err := connectDB(path)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
 	defer db.Close()
 
-	_, err = migrator.Rollback(db, target)
+	_, err = ctx.migrator.Rollback(db, target)
 	if err != nil {
 		return fmt.Errorf("rollback failed: %w", err)
 	}
