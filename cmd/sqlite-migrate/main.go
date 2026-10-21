@@ -209,33 +209,37 @@ func cmdStatus(ctx commandContext, path string) error {
 		return fmt.Errorf("failed to get db status: %w", err)
 	}
 
+	render := ctx.renderer
+
 	applied := status.Applied
 	pending := status.Pending
 
 	lines := []string{
-		"Database status",
+		render(titleStyle, "Database status"),
 		"",
-		fmt.Sprintf("%-10s %s", "Version:", strconv.Itoa(status.Version)),
-		fmt.Sprintf("%-10s %s", "Pending:", strconv.Itoa(len(pending))),
+		fmt.Sprintf("%-10s %s", "Version:",
+			render(versionStyle, strconv.Itoa(status.Version))),
+		fmt.Sprintf("%-10s %s", "Pending:",
+			render(pendingStyle, strconv.Itoa(len(pending)))),
 		"",
-		"Applied migrations:",
+		render(sectionStyle, "Applied migrations:"),
 	}
 
 	if len(applied) == 0 {
-		lines = append(lines, "  (none)")
+		lines = append(lines, render(faintStyle, "  (none)"))
 	} else {
 		for _, migration := range applied {
-			lines = append(lines, "  ✓ "+migration)
+			lines = append(lines, render(upStyle, "  ✓ ")+migration)
 		}
 	}
 
-	lines = append(lines, "", "Pending migrations:")
+	lines = append(lines, "", render(sectionStyle, "Pending migrations:"))
 
 	if len(pending) == 0 {
-		lines = append(lines, "  (none)")
+		lines = append(lines, render(faintStyle, "  (none)"))
 	} else {
 		for _, migration := range pending {
-			lines = append(lines, "  • "+migration)
+			lines = append(lines, render(pendingStyle, "  • ")+migration)
 		}
 	}
 
