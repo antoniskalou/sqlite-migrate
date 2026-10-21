@@ -16,20 +16,42 @@ import (
 
 const defaultMigrationDir = "sql"
 
+type loggerOptions struct {
+	verbose bool
+	noColor bool
+}
+
 func main() {
-	dbPathArg := cli.StringArg{
-		Name:     "dbpath",
-		Required: true,
+	loggerOptions := loggerOptions{
+		verbose: false,
+		noColor: false,
 	}
 
 	migrator := &migrate.Migrator{
 		RootDir: defaultMigrationDir,
-		OnEvent: logEvent,
+		OnEvent: logEvent(&loggerOptions),
 	}
 
+	dbPathArg := cli.StringArg{
+		Name:     "dbpath",
+		Required: true,
+	}
 	cmd := &cli.Command{
 		Name:  "sqlite-migrate",
 		Usage: "migrate SQLite databases",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:        "verbose",
+				Aliases:     []string{"v"},
+				Usage:       "print SQL statements while migrating",
+				Destination: &loggerOptions.verbose,
+			},
+			&cli.BoolFlag{
+				Name:        "no-color",
+				Usage:       "disable coloured output",
+				Destination: &loggerOptions.noColor,
+			},
+		},
 		Commands: []*cli.Command{
 			{
 				Name:  "init",
@@ -88,6 +110,26 @@ func main() {
 	}
 }
 
+func logEvent(options *loggerOptions) func(migrate.Event) {
+	return func(e migrate.Event) {
+		switch e.Kind {
+		case migrate.EventSkip:
+			fmt.Printf("[SKIP] %s (already applied)\n", e.File)
+		case migrate.EventApply:
+			fmt.Printf("[%s] %s → user_version=%d\n",
+				strings.ToUpper(e.Direction), e.File, e.Version)
+		case migrate.EventSQL:
+			if options.verbose {
+				fmt.Println(e.SQL)
+			}
+		case migrate.EventDone:
+			fmt.Printf("[DONE] user_version=%d\n", e.Version)
+		default:
+			panic(fmt.Sprintf("unhandled event kind: %q", e.Kind))
+		}
+	}
+}
+
 func connectDB(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -97,22 +139,6 @@ func connectDB(path string) (*sql.DB, error) {
 	// TODO: don't create the DB if it doesn't exist, unless we're running deploy
 
 	return db, nil
-}
-
-func logEvent(e migrate.Event) {
-	switch e.Kind {
-	case migrate.EventSkip:
-		fmt.Printf("[SKIP] %s (already applied)\n", e.File)
-	case migrate.EventApply:
-		fmt.Printf("[%s] %s → user_version=%d\n",
-			strings.ToUpper(e.Direction), e.File, e.Version)
-	case migrate.EventSQL:
-		fmt.Println(e.SQL)
-	case migrate.EventDone:
-		fmt.Printf("[DONE] user_version=%d\n", e.Version)
-	default:
-		panic(fmt.Sprintf("unhandled event kind: %q", e.Kind))
-	}
 }
 
 func cmdInit() error {
