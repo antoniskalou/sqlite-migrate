@@ -127,12 +127,10 @@ func logEvent(options *loggerOptions) func(migrate.Event) {
 			}
 
 			dir := strings.ToUpper(e.Direction.String())
-			fmt.Printf("%s %s %s\n",
+			fmt.Printf("%s %s → user_version=%s\n",
 				dirStyle.Render("["+dir+"]"),
 				e.File,
-				cyanStyle.Render(fmt.Sprintf(
-					"→ user_version=%d", e.Version,
-				)),
+				versionStyle.Render(strconv.Itoa(e.Version)),
 			)
 		case migrate.EventSQL:
 			if options.verbose {
