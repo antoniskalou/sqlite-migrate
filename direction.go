@@ -1,28 +1,28 @@
 package migrate
 
-type direction uint8
+type Direction uint8
 
 const (
-	up direction = iota
-	down
+	Up Direction = iota
+	Down
 )
 
-func (d direction) String() string {
+func (d Direction) String() string {
 	switch d {
-	case up:
+	case Up:
 		return "up"
-	case down:
+	case Down:
 		return "down"
 	default:
 		panic("unreachable")
 	}
 }
 
-func (d direction) Delta() int {
+func (d Direction) Delta() int {
 	switch d {
-	case up:
+	case Up:
 		return 1
-	case down:
+	case Down:
 		return -1
 	default:
 		panic("unreachable")

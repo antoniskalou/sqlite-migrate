@@ -12,7 +12,7 @@ const (
 type Event struct {
 	Kind      EventKind
 	File      string
-	Direction string
+	Direction Direction
 	Version   int
 	SQL       string
 }

@@ -31,7 +31,7 @@ type MigrationStatus struct {
 // A successful rollback returns err == nil. If the process was stopped due to
 // failure, the last applied "user version" is returned.
 func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
-	return m.migrate(db, up, target)
+	return m.migrate(db, Up, target)
 }
 
 // Rollback reverses the migrations in the configured RootDir. It optionally
@@ -41,7 +41,7 @@ func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
 // A successful rollback returns err == nil. If the process was stopped due to
 // failure, the last applied "user version" is returned.
 func (m *Migrator) Rollback(db *sql.DB, target *int) (int, error) {
-	return m.migrate(db, down, target)
+	return m.migrate(db, Down, target)
 }
 
 // Version returns the current "user version" of the database.
@@ -57,7 +57,7 @@ func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 		return nil, err
 	}
 
-	migrations, err := migrations(m.RootDir, up)
+	migrations, err := migrations(m.RootDir, Up)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (m *Migrator) emit(event Event) {
 
 func (m *Migrator) migrate(
 	db *sql.DB,
-	direction direction,
+	direction Direction,
 	target *int,
 ) (int, error) {
 	version, err := getUserVersion(db)
@@ -105,21 +105,21 @@ func (m *Migrator) migrate(
 		return version, fmt.Errorf("invalid target version: %d", *target)
 	}
 
-	if direction == down {
+	if direction == Down {
 		// we iterate in reverse order for "down" migrations
 		slices.Reverse(files)
 	}
 
 	for i, path := range files {
 		if target != nil {
-			if (direction == up && version >= *target) ||
-				(direction == down && version <= *target) {
+			if (direction == Up && version >= *target) ||
+				(direction == Down && version <= *target) {
 				break
 			}
 		}
 
-		if (direction == up && i < version) ||
-			(direction == down && len(files)-i != version) {
+		if (direction == Up && i < version) ||
+			(direction == Down && len(files)-i != version) {
 			m.emit(Event{
 				Kind: EventSkip,
 				File: path,
@@ -130,10 +130,9 @@ func (m *Migrator) migrate(
 		nextVersion := version + direction.Delta()
 
 		m.emit(Event{
-			Kind: EventApply,
-			File: path,
-			// TODO: consider using/exporting direction struct
-			Direction: direction.String(),
+			Kind:      EventApply,
+			File:      path,
+			Direction: direction,
 			Version:   nextVersion,
 		})
 
@@ -218,7 +217,7 @@ func setUserVersion(db sqlExecutor, version int) error {
 	return err
 }
 
-func migrations(root string, direction direction) ([]string, error) {
+func migrations(root string, direction Direction) ([]string, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err

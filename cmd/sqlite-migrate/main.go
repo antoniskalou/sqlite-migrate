@@ -121,13 +121,12 @@ func logEvent(options *loggerOptions) func(migrate.Event) {
 				faintStyle.Render("(already applied)"),
 			)
 		case migrate.EventApply:
-			dir := strings.ToUpper(e.Direction)
-
 			dirStyle := upStyle
-			if dir == "DOWN" {
+			if e.Direction == migrate.Down {
 				dirStyle = downStyle
 			}
 
+			dir := strings.ToUpper(e.Direction.String())
 			fmt.Printf("%s %s %s\n",
 				dirStyle.Render("["+dir+"]"),
 				e.File,
