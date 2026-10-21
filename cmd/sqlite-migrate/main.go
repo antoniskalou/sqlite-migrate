@@ -115,7 +115,7 @@ func main() {
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		fmt.Printf("%s %v", renderer(errorStyle, "[ERR]"), err)
+		fmt.Printf("%s %v\n", renderer(errorStyle, "[ERR]"), err)
 		os.Exit(1)
 	}
 }
@@ -156,13 +156,26 @@ func logEvent(renderer renderer, options *loggerOptions) func(migrate.Event) {
 	}
 }
 
-func connectDB(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open: %w", err)
+func connectDB(path string, preventCreate bool) (*sql.DB, error) {
+	// TODO: sanitize paths
+	dsn := path
+
+	if preventCreate {
+		// rw mode doesn't create the DB if it doesn't exist
+		dsn = "file:" + path + "?mode=rw"
 	}
-	// TODO: make sure path dir always exists
-	// TODO: don't create the DB if it doesn't exist, unless we're running deploy
+
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// fail early - Open only opens a handle, Ping checks that we can actually
+	// connect. e.g. if the DB doesn't exist in rw mode, this will die here.
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
 
 	return db, nil
 }
@@ -198,7 +211,7 @@ func cmdInit(ctx commandContext) error {
 }
 
 func cmdStatus(ctx commandContext, path string) error {
-	db, err := connectDB(path)
+	db, err := connectDB(path, true)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
@@ -249,7 +262,7 @@ func cmdStatus(ctx commandContext, path string) error {
 }
 
 func cmdDeploy(ctx commandContext, path string, target *int) error {
-	db, err := connectDB(path)
+	db, err := connectDB(path, false)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
@@ -264,7 +277,7 @@ func cmdDeploy(ctx commandContext, path string, target *int) error {
 }
 
 func cmdRollback(ctx commandContext, path string, target *int) error {
-	db, err := connectDB(path)
+	db, err := connectDB(path, true)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
