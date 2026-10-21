@@ -10,3 +10,13 @@ var (
 	downStyle    = lipgloss.NewStyle().Foreground(lipgloss.Magenta)
 	faintStyle   = lipgloss.NewStyle().Faint(true)
 )
+
+func newRenderer(noColor bool) func(lipgloss.Style, ...string) string {
+	return func(style lipgloss.Style, strs ...string) string {
+		s := style
+		if noColor {
+			s = s.UnsetForeground().UnsetBackground()
+		}
+		return s.Render(strs...)
+	}
+}

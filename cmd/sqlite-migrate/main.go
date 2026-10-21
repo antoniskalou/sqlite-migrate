@@ -112,13 +112,17 @@ func main() {
 }
 
 func logEvent(options *loggerOptions) func(migrate.Event) {
+	noColorEnv := os.Getenv("NO_COLOR") != ""
+
 	return func(e migrate.Event) {
+		renderer := newRenderer(options.noColor || noColorEnv)
+
 		switch e.Kind {
 		case migrate.EventSkip:
 			fmt.Printf("%s %s %s\n",
-				skipStyle.Render("[SKIP]"),
+				renderer(skipStyle, "[SKIP]"),
 				e.File,
-				faintStyle.Render("(already applied)"),
+				renderer(faintStyle, "(already applied)"),
 			)
 		case migrate.EventApply:
 			dirStyle := upStyle
@@ -128,18 +132,18 @@ func logEvent(options *loggerOptions) func(migrate.Event) {
 
 			dir := strings.ToUpper(e.Direction.String())
 			fmt.Printf("%s %s → user_version=%s\n",
-				dirStyle.Render("["+dir+"]"),
+				renderer(dirStyle, "["+dir+"]"),
 				e.File,
-				versionStyle.Render(strconv.Itoa(e.Version)),
+				renderer(versionStyle, strconv.Itoa(e.Version)),
 			)
 		case migrate.EventSQL:
 			if options.verbose {
-				fmt.Println(faintStyle.Render(e.SQL))
+				fmt.Println(renderer(faintStyle, e.SQL))
 			}
 		case migrate.EventDone:
 			fmt.Printf("%s user_version=%s\n",
-				doneStyle.Render("[DONE]"),
-				versionStyle.Render(strconv.Itoa(e.Version)),
+				renderer(doneStyle, "[DONE]"),
+				renderer(versionStyle, strconv.Itoa(e.Version)),
 			)
 		default:
 			panic(fmt.Sprintf("unhandled event kind: %q", e.Kind))
