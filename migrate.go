@@ -11,101 +11,54 @@ import (
 	"strings"
 )
 
+// A Migrator is manages the initial configuration for the SQLite migrator.
 type Migrator struct {
 	RootDir string
 	Logger  *log.Logger
 }
 
+// A MigrationStatus represents the global status of applied migrations within
+// a SQLite project.
 type MigrationStatus struct {
 	Version int
 	Applied []string
 	Pending []string
 }
 
+// Deploy runs migrations in the configured RootDir. It optionally accepts a
+// target parameter to specify which "user version" the deployment should
+// run until.
+//
+// A successful rollback returns err == nil. If the process was stopped due to
+// failure, the last applied "user version" is returned.
 func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
-	version, err := getUserVersion(db)
-	if err != nil {
-		return 0, err
-	}
-
-	migrations, err := migrations(m.RootDir, "up")
-	if err != nil {
-		return version, err
-	}
-
-	if !isValidTarget(target, len(migrations)) {
-		return version, fmt.Errorf("invalid target version: %d", *target)
-	}
-
-	for i, path := range migrations {
-		if target != nil && version >= *target {
-			break
-		}
-
-		if i < version {
-			m.log("%s already applied, skipping", path)
-			continue
-		}
-
-		nextVersion := version + 1
-		if err := m.applyMigration(db, path, nextVersion); err != nil {
-			return version, err
-		}
-		version = nextVersion
-	}
-
-	m.log("final version: %d", version)
-	return version, nil
+	return m.migrate(db, up, target)
 }
 
+// Rollback reverses the migrations in the configured RootDir. It optionally
+// accepts a target parameter to specify which "user version" the deployment
+// should run until.
+//
+// A successful rollback returns err == nil. If the process was stopped due to
+// failure, the last applied "user version" is returned.
 func (m *Migrator) Rollback(db *sql.DB, target *int) (int, error) {
-	version, err := getUserVersion(db)
-	if err != nil {
-		return 0, err
-	}
-
-	migrations, err := migrations(m.RootDir, "down")
-	if err != nil {
-		return version, err
-	}
-
-	if !isValidTarget(target, len(migrations)) {
-		return version, fmt.Errorf("invalid target version: %d", *target)
-	}
-
-	// we iterate through rollbacks backwards
-	for i, path := range slices.Backward(migrations) {
-		if target != nil && version <= *target {
-			break
-		}
-
-		if i+1 != version {
-			m.log("%s already applied, skipping", path)
-			continue
-		}
-
-		nextVersion := version - 1
-		if err := m.applyMigration(db, path, nextVersion); err != nil {
-			return version, err
-		}
-		version = nextVersion
-	}
-
-	m.log("final version: %d", version)
-	return version, nil
+	return m.migrate(db, down, target)
 }
 
+// Version returns the current "user version" of the database.
 func (m *Migrator) Version(db *sql.DB) (int, error) {
 	return getUserVersion(db)
 }
 
+// Status returns a [MigrationStatus], constructed by querying the DB and
+// the RootDir in the filesystem.
 func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 	version, err := getUserVersion(db)
 	if err != nil {
 		return nil, err
 	}
 
-	migrations, err := migrations(m.RootDir, "up")
+	migrations, err := migrations(m.RootDir, up)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +85,55 @@ func (m *Migrator) log(format string, v ...any) {
 	if m.Logger != nil {
 		m.Logger.Printf(format, v...)
 	}
+}
+
+func (m *Migrator) migrate(
+	db *sql.DB,
+	direction direction,
+	target *int,
+) (int, error) {
+	version, err := getUserVersion(db)
+	if err != nil {
+		return 0, err
+	}
+
+	files, err := migrations(m.RootDir, direction)
+	if err != nil {
+		return version, err
+	}
+
+	if !isValidTarget(target, len(files)) {
+		return version, fmt.Errorf("invalid target version: %d", *target)
+	}
+
+	if direction == down {
+		// we iterate in reverse order for "down" migrations
+		slices.Reverse(files)
+	}
+
+	for i, path := range files {
+		if target != nil {
+			if (direction == up && version >= *target) ||
+				(direction == down && version <= *target) {
+				break
+			}
+		}
+
+		if (direction == up && i < version) ||
+			(direction == down && len(files)-i != version) {
+			m.log("%s already applied, skipping", path)
+			continue
+		}
+
+		nextVersion := version + direction.Delta()
+		if err := m.applyMigration(db, path, nextVersion); err != nil {
+			return version, err
+		}
+		version = nextVersion
+	}
+
+	m.log("final version: %d", version)
+	return version, nil
 }
 
 func (m *Migrator) applyMigration(
@@ -199,13 +201,13 @@ func runSQLFile(db sqlExecutor, file string) error {
 	return nil
 }
 
-func migrations(root string, direction string) ([]string, error) {
+func migrations(root string, direction direction) ([]string, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
 	}
 
-	suffix := direction + ".sql"
+	suffix := direction.String() + ".sql"
 
 	var files []string
 	for _, entry := range entries {
