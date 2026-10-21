@@ -24,7 +24,7 @@ func main() {
 
 	migrator := &migrate.Migrator{
 		RootDir: defaultMigrationDir,
-		Logger:  log.New(os.Stdout, "[migrate] ", log.LstdFlags),
+		OnEvent: logEvent,
 	}
 
 	cmd := &cli.Command{
@@ -99,6 +99,22 @@ func connectDB(path string) (*sql.DB, error) {
 	return db, nil
 }
 
+func logEvent(e migrate.Event) {
+	switch e.Kind {
+	case migrate.EventSkip:
+		fmt.Printf("[SKIP] %s (already applied)\n", e.File)
+	case migrate.EventApply:
+		fmt.Printf("[%s] %s → user_version=%d\n",
+			strings.ToUpper(e.Direction), e.File, e.Version)
+	case migrate.EventSQL:
+		fmt.Println(e.SQL)
+	case migrate.EventDone:
+		fmt.Printf("[DONE] user_version=%d\n", e.Version)
+	default:
+		panic(fmt.Sprintf("unhandled event kind: %q", e.Kind))
+	}
+}
+
 func cmdInit() error {
 	const sql = `-- code goes here`
 
@@ -165,12 +181,11 @@ func cmdDeploy(migrator *migrate.Migrator, path string, target *int) error {
 	}
 	defer db.Close()
 
-	version, err := migrator.Deploy(db, target)
+	_, err = migrator.Deploy(db, target)
 	if err != nil {
 		return fmt.Errorf("deploy failed: %w", err)
 	}
 
-	fmt.Println("Migrated to version ", version)
 	return nil
 }
 
@@ -181,12 +196,11 @@ func cmdRollback(migrator *migrate.Migrator, path string, target *int) error {
 	}
 	defer db.Close()
 
-	version, err := migrator.Rollback(db, target)
+	_, err = migrator.Rollback(db, target)
 	if err != nil {
 		return fmt.Errorf("rollback failed: %w", err)
 	}
 
-	fmt.Println("Rolled back to version ", version)
 	return nil
 }
 

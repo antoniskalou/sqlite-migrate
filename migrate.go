@@ -3,7 +3,6 @@ package migrate
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,7 +13,7 @@ import (
 // A Migrator is manages the initial configuration for the SQLite migrator.
 type Migrator struct {
 	RootDir string
-	Logger  *log.Logger
+	OnEvent func(Event)
 }
 
 // A MigrationStatus represents the global status of applied migrations within
@@ -81,9 +80,9 @@ func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 	}, nil
 }
 
-func (m *Migrator) log(format string, v ...any) {
-	if m.Logger != nil {
-		m.Logger.Printf(format, v...)
+func (m *Migrator) emit(event Event) {
+	if m.OnEvent != nil {
+		m.OnEvent(event)
 	}
 }
 
@@ -121,18 +120,33 @@ func (m *Migrator) migrate(
 
 		if (direction == up && i < version) ||
 			(direction == down && len(files)-i != version) {
-			m.log("%s already applied, skipping", path)
+			m.emit(Event{
+				Kind: EventSkip,
+				File: path,
+			})
 			continue
 		}
 
 		nextVersion := version + direction.Delta()
+
+		m.emit(Event{
+			Kind: EventApply,
+			File: path,
+			// TODO: consider using/exporting direction struct
+			Direction: direction.String(),
+			Version:   nextVersion,
+		})
+
 		if err := m.applyMigration(db, path, nextVersion); err != nil {
 			return version, err
 		}
 		version = nextVersion
 	}
 
-	m.log("final version: %d", version)
+	m.emit(Event{
+		Kind:    EventDone,
+		Version: version,
+	})
 	return version, nil
 }
 
@@ -147,9 +161,7 @@ func (m *Migrator) applyMigration(
 	}
 	defer tx.Rollback()
 
-	m.log("running migration: %s", path)
-
-	if err := runSQLFile(tx, path); err != nil {
+	if err := m.runSQLFile(tx, path); err != nil {
 		return err
 	}
 
@@ -168,6 +180,29 @@ func isValidTarget(target *int, numMigrations int) bool {
 	return target == nil || (*target >= 0 && *target <= numMigrations)
 }
 
+// interface that allows us to pass a sql.DB or a sql.Tx to functions
+type sqlExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func (m *Migrator) runSQLFile(db sqlExecutor, file string) error {
+	sqlBytes, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("read SQL file %s: %w", file, err)
+	}
+
+	m.emit(Event{
+		Kind: EventSQL,
+		SQL:  string(sqlBytes),
+	})
+
+	if _, err := db.Exec(string(sqlBytes)); err != nil {
+		return fmt.Errorf("execute SQL file %s: %w", file, err)
+	}
+
+	return nil
+}
+
 func getUserVersion(db *sql.DB) (int, error) {
 	var version int
 	err := db.QueryRow("pragma user_version").Scan(&version)
@@ -177,28 +212,10 @@ func getUserVersion(db *sql.DB) (int, error) {
 	return version, nil
 }
 
-// interface that allows us to pass a sql.DB or a sql.Tx to functions
-type sqlExecutor interface {
-	Exec(query string, args ...any) (sql.Result, error)
-}
-
 func setUserVersion(db sqlExecutor, version int) error {
 	// prepared statements don't work for pragma
 	_, err := db.Exec("pragma user_version = " + strconv.Itoa(version))
 	return err
-}
-
-func runSQLFile(db sqlExecutor, file string) error {
-	sqlBytes, err := os.ReadFile(file)
-	if err != nil {
-		return fmt.Errorf("read SQL file %s: %w", file, err)
-	}
-
-	if _, err := db.Exec(string(sqlBytes)); err != nil {
-		return fmt.Errorf("execute SQL file %s: %w", file, err)
-	}
-
-	return nil
 }
 
 func migrations(root string, direction direction) ([]string, error) {
