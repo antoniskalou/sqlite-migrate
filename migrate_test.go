@@ -151,8 +151,7 @@ func TestMigrationLifecycle(t *testing.T) {
 	})
 
 	t.Run("rollback one", func(t *testing.T) {
-		target := 1
-		got, err := m.Rollback(db, &target)
+		got, err := m.Rollback(db, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,7 +186,7 @@ func TestMigrationLifecycle(t *testing.T) {
 	})
 
 	t.Run("rollback all", func(t *testing.T) {
-		got, err := m.Rollback(db, nil)
+		got, err := m.Rollback(db, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -268,7 +267,7 @@ func TestRollbackTargetValidation(t *testing.T) {
 		t.Run(strings.ReplaceAll(
 			strconv.Itoa(target), "-", "minus",
 		), func(t *testing.T) {
-			got, err := m.Rollback(db, &target)
+			got, err := m.Rollback(db, target)
 			if err == nil {
 				t.Errorf("Rollback(%d) succeeded, want error", target)
 			}
@@ -324,8 +323,7 @@ func TestRollbackFailurePreservesVersion(t *testing.T) {
 
 	writeMigration(t, m.RootDir, "001_t2.down.sql", `INVALID SQL;`)
 
-	target := 1
-	got, err := m.Rollback(db, &target)
+	got, err := m.Rollback(db, 1)
 	if err == nil {
 		t.Fatal("Rollback() succeeded, want error")
 	}
@@ -385,13 +383,13 @@ func TestPreviousRollbackTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
 	// rollback all first
-	version, err := m.Rollback(db, nil)
+	version, err := m.Rollback(db, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// current version
-	got, err := m.Rollback(db, &version)
+	got, err := m.Rollback(db, version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +399,7 @@ func TestPreviousRollbackTarget(t *testing.T) {
 
 	// next version
 	target := version + 1
-	got, err = m.Rollback(db, &target)
+	got, err = m.Rollback(db, target)
 	if err != nil {
 		t.Fatal(err)
 	}

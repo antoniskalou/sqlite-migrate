@@ -36,14 +36,14 @@ func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
 	return m.migrate(db, Up, target)
 }
 
-// Rollback reverses the migrations in the configured RootDir. It optionally
-// accepts a target parameter to specify which "user version" the deployment
-// should run until.
+// Rollback reverses the migrations in the configured RootDir. It requires
+// a target parameter to specify which "user version" the deployment should
+// run until.
 //
 // A successful rollback returns err == nil. If the process was stopped due to
 // failure, the last applied "user version" is returned.
-func (m *Migrator) Rollback(db *sql.DB, target *int) (int, error) {
-	return m.migrate(db, Down, target)
+func (m *Migrator) Rollback(db *sql.DB, target int) (int, error) {
+	return m.migrate(db, Down, &target)
 }
 
 // Version returns the current "user version" of the database.

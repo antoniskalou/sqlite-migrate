@@ -114,12 +114,7 @@ func main() {
 					Usage:    "specify target version",
 				}},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					var target *int
-					if cmd.IsSet("target") {
-						t := cmd.Int("target")
-						target = &t
-					}
-					return cmdRollback(commandCtx, cmd.StringArg("dbpath"), target)
+					return cmdRollback(commandCtx, cmd.StringArg("dbpath"), cmd.Int("target"))
 				},
 			},
 		},
@@ -322,7 +317,7 @@ func cmdDeploy(ctx commandContext, path string, target *int) error {
 	return nil
 }
 
-func cmdRollback(ctx commandContext, path string, target *int) error {
+func cmdRollback(ctx commandContext, path string, target int) error {
 	db, err := connectDB(path, true)
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
