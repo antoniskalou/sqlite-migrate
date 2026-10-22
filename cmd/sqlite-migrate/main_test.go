@@ -2,13 +2,102 @@ package main
 
 import (
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
 
-func TestSQLiteDsn(t *testing.T) {
+func TestWriteIfNotExists(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates a file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "migration.sql")
+		content := "create table users (id integer);"
+
+		if err := writeIfNotExists(path, content); err != nil {
+			t.Fatalf("writeIfNotExists() error = %v", err)
+		}
+
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile() error = %v", err)
+		}
+
+		if string(got) != content {
+			t.Errorf("content = %q, want %q", got, content)
+		}
+	})
+
+	t.Run("preserves existing file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "migration.sql")
+		original := "original migration"
+
+		if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := writeIfNotExists(path, "replacement"); err != nil {
+			t.Fatalf("writeIfNotExists() error = %v", err)
+		}
+
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if string(got) != original {
+			t.Errorf("existing file was changed: got %q", got)
+		}
+	})
+
+	t.Run("returns error for invalid parent", func(t *testing.T) {
+		path := filepath.Join(
+			t.TempDir(), "missing-directory", "migration.sql",
+		)
+
+		err := writeIfNotExists(path, "cotnent")
+		if err == nil {
+			t.Fatal("expected an error for a missing parent directory")
+		}
+	})
+
+	t.Run("creates empty file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "empty.sql")
+
+		if err := writeIfNotExists(path, ""); err != nil {
+			t.Fatalf("writeIfNotExists() error = %v", err)
+		}
+
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if info.Size() != 0 {
+			t.Errorf("file size = %d, want 0", info.Size())
+		}
+	})
+}
+
+func TestWriteIfNotExistsExistingDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "migration.sql")
+
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := writeIfNotExists(path, "content")
+	if err == nil {
+		t.Fatal("expected an error when the destination is a directory")
+	}
+}
+
+func TestSQLiteDSN(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -44,9 +133,9 @@ func TestSQLiteDsn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := sqliteDsn(tt.path, tt.options)
+			got, err := sqliteDSN(tt.path, tt.options)
 			if err != nil {
-				t.Fatalf("sqliteDsn() error = %v", err)
+				t.Fatalf("sqliteDSN() error = %v", err)
 			}
 
 			u, err := url.Parse(got)
@@ -80,5 +169,30 @@ func TestSQLiteDsn(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSQLiteDSNOptionsAreEncoded(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "test.db")
+	dsn, err := sqliteDSN(path, map[string]string{
+		"custom": "a b&c",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := u.Query().Get("custom"); got != "a b&c" {
+		t.Errorf("custom option = %q, want %q", got, "a b&c")
+	}
+
+	if strings.TrimSpace(u.Path) == "" {
+		t.Fatal("DSN path is empty")
 	}
 }

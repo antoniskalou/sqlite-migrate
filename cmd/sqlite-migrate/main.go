@@ -167,7 +167,7 @@ func logEvent(renderer renderer, options *loggerOptions) func(migrate.Event) {
 	}
 }
 
-func sqliteDsn(path string, options map[string]string) (string, error) {
+func sqliteDSN(path string, options map[string]string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
@@ -199,7 +199,7 @@ func connectDB(path string, preventCreate bool) (*sql.DB, error) {
 		dsnOpts["mode"] = "rw"
 	}
 
-	dsn, err := sqliteDsn(path, dsnOpts)
+	dsn, err := sqliteDSN(path, dsnOpts)
 	if err != nil {
 		return nil, fmt.Errorf("invalid DSN format: %w", err)
 	}
