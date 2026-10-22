@@ -59,6 +59,7 @@ func main() {
 				Name:        "no-color",
 				Usage:       "disable coloured output",
 				Destination: &loggerOptions.noColor,
+				Sources:     cli.EnvVars("NO_COLOR"),
 			},
 			&cli.StringFlag{
 				Name:        "root",

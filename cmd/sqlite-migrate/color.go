@@ -1,10 +1,6 @@
 package main
 
-import (
-	"os"
-
-	"charm.land/lipgloss/v2"
-)
+import "charm.land/lipgloss/v2"
 
 var (
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Red)
@@ -22,11 +18,9 @@ var (
 type renderer func(lipgloss.Style, ...string) string
 
 func newRenderer(noColor *bool) renderer {
-	noColorEnv := os.Getenv("NO_COLOR") != ""
-
 	return func(style lipgloss.Style, strs ...string) string {
 		s := style
-		if *noColor || noColorEnv {
+		if *noColor {
 			s = s.UnsetForeground().UnsetBackground()
 		}
 		return s.Render(strs...)
