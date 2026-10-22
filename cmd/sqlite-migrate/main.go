@@ -48,9 +48,10 @@ func main() {
 		Required: true,
 	}
 	cmd := &cli.Command{
-		Name:    "sqlite-migrate",
-		Usage:   "migrate SQLite databases",
-		Version: migrate.Version,
+		Name:      "sqlite-migrate",
+		Usage:     "migrate SQLite databases",
+		Copyright: "Copyright © 2026 Antonis Kalou. All rights reserved.\n\nSee LICENSE for details.",
+		Version:   migrate.Version,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:        "verbose",
