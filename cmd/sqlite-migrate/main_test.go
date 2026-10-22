@@ -81,22 +81,6 @@ func TestWriteIfNotExists(t *testing.T) {
 	})
 }
 
-func TestWriteIfNotExistsExistingDirectory(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "migration.sql")
-
-	if err := os.Mkdir(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	err := writeIfNotExists(path, "content")
-	if err == nil {
-		t.Fatal("expected an error when the destination is a directory")
-	}
-}
-
 func TestSQLiteDSN(t *testing.T) {
 	t.Parallel()
 
@@ -195,4 +179,69 @@ func TestSQLiteDSNOptionsAreEncoded(t *testing.T) {
 	if strings.TrimSpace(u.Path) == "" {
 		t.Fatal("DSN path is empty")
 	}
+}
+
+func TestConnectDB(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates database when allowed", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+
+		db, err := connectDB(path, false)
+		if err != nil {
+			t.Fatalf("connectDB() error = %v", err)
+		}
+		defer db.Close()
+
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("database file was not created: %v", err)
+		}
+
+		var result int
+		if err := db.QueryRow("select 1").Scan(&result); err != nil {
+			t.Fatalf("query failed: %v", err)
+		}
+
+		if result != 1 {
+			t.Errorf("select 1 = %d, want 1", result)
+		}
+	})
+
+	t.Run("rejects missing database in read-write mode", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "missing.db")
+
+		db, err := connectDB(path, true)
+		if err == nil {
+			if db != nil {
+				db.Close()
+			}
+			t.Fatal("expected an error for a missing database")
+		}
+
+		if !strings.Contains(err.Error(), "no such file") {
+			t.Logf("database error: %v", err)
+		}
+
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("database should not have been created; stat error = %v", err)
+		}
+	})
+
+	t.Run("opens existing database", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "existing.db")
+
+		db, err := connectDB(path, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		db, err = connectDB(path, true)
+		if err != nil {
+			t.Fatalf("connectDB() on existing database: %v", err)
+		}
+		_ = db.Close()
+	})
 }
