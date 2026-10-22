@@ -44,6 +44,18 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(output)
 }
 
+func writeMigration(t *testing.T, dir, name, content string) {
+	t.Helper()
+
+	if err := os.WriteFile(
+		filepath.Join(dir, name),
+		[]byte(strings.TrimSpace(content)+"\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write migration %s: %v", name, err)
+	}
+}
+
 func TestWriteIfNotExists(t *testing.T) {
 	t.Parallel()
 
@@ -475,45 +487,39 @@ func TestCmdStatusEmptyDatabase(t *testing.T) {
 	}
 }
 
-func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
-	t.Parallel()
-
-	rootDir := t.TempDir()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-
-	migrations := map[string]string{
-		"001_create_users.up.sql": `
+var testMigrations = map[string]string{
+	"001_create_users.up.sql": `
 create table users(
 	id integer primary key,
 	name text not null
 );
 `,
-		"001_create_users.down.sql": `
+	"001_create_users.down.sql": `
 drop table users;
 `,
-		"002_create_posts.up.sql": `
+	"002_create_posts.up.sql": `
 create table posts (
 	id integer primary key,
 	title text not null
 );
 `,
-		"002_create_posts.down.sql": `
+	"002_create_posts.down.sql": `
 drop table posts;
 `,
-	}
+}
 
-	for name, content := range migrations {
-		if err := os.WriteFile(
-			filepath.Join(rootDir, name),
-			[]byte(content),
-			0o644,
-		); err != nil {
-			t.Fatal(err)
-		}
+func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+
+	for name, content := range testMigrations {
+		writeMigration(t, rootDir, name, content)
 	}
 
 	ctx := newTestCommandContext(rootDir)
 
+	dbPath := filepath.Join(t.TempDir(), "test.db")
 	// apply the first migration, leaving the second pending
 	db, err := connectDB(dbPath, false)
 	if err != nil {
@@ -549,5 +555,120 @@ Pending migrations:
 
 	if got != want {
 		t.Errorf("cmdStatus() output mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestCmdDeploy(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	for name, content := range testMigrations {
+		writeMigration(t, rootDir, name, content)
+	}
+
+	ctx := newTestCommandContext(rootDir)
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
+		t.Fatalf("cmdDeploy() error = %v", err)
+	}
+
+	// deploy should create the DB if it doesn't exist
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("database was not created: %v", err)
+	}
+
+	db, err := connectDB(dbPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var count int
+	err = db.QueryRow(`
+			select count (*)
+			from sqlite_master
+			where type = 'table' and name = 'users'
+		`).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatal("expected users table to exist after deployment")
+	}
+}
+
+func TestCmdDeployTarget(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	for name, content := range testMigrations {
+		writeMigration(t, rootDir, name, content)
+	}
+
+	ctx := newTestCommandContext(rootDir)
+	target := 1
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	if err := cmdDeploy(ctx, dbPath, &target); err != nil {
+		t.Fatalf("cmdDeploy() error = %v", err)
+	}
+
+	db, err := connectDB(dbPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	tests := []struct {
+		table string
+		want  bool
+	}{
+		{table: "users", want: true},
+		{table: "posts", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.table, func(t *testing.T) {
+			var count int
+			err := db.QueryRow(`
+					select count(*)
+					from sqlite_master
+					where type = 'table' and name = ?
+				`, tt.table).Scan(&count)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := count == 1
+			if got != tt.want {
+				t.Errorf("table %q exists = %v, want %v", tt.table, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCmdDeployMigrationError(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+
+	writeMigration(t, rootDir, "001_invalid.up.sql", `
+			this is not valid sql;
+		`)
+	writeMigration(t, rootDir, "001_invalid.down.sql", `
+			select 1;
+		`)
+
+	ctx := newTestCommandContext(rootDir)
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	err := cmdDeploy(ctx, dbPath, nil)
+	if err == nil {
+		t.Fatal("expected deployment error")
+	}
+
+	if !strings.Contains(err.Error(), "deploy failed:") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
