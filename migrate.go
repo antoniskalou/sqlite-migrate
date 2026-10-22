@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+const Version = "0.0.1"
+
 // A Migrator is manages the initial configuration for the SQLite migrator.
 type Migrator struct {
 	RootDir string
