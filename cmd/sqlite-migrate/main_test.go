@@ -8,13 +8,21 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
 )
 
+var stdoutMu sync.Mutex
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
+
+	// lock Stdout to prevent race condition in parallel tests all capturing
+	// from the same Stdout stream
+	stdoutMu.Lock()
+	defer stdoutMu.Unlock()
 
 	old := os.Stdout
 	r, w, err := os.Pipe()
@@ -23,9 +31,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 
 	os.Stdout = w
-	t.Cleanup(func() {
+	defer func() {
 		os.Stdout = old
-	})
+	}()
 
 	fn()
 
@@ -330,9 +338,11 @@ func TestCmdInitCreatesMigrationFiles(t *testing.T) {
 	rootDir := filepath.Join(t.TempDir(), "sql")
 	ctx := newTestCommandContext(rootDir)
 
-	if err := cmdInit(ctx); err != nil {
-		t.Fatalf("cmdInit() error = %v", err)
-	}
+	captureStdout(t, func() {
+		if err := cmdInit(ctx); err != nil {
+			t.Fatalf("cmdInit() error = %v", err)
+		}
+	})
 
 	if info, err := os.Stat(rootDir); err != nil {
 		t.Fatalf("migration directory was not created: %v", err)
@@ -379,9 +389,11 @@ func TestCmdInitDoesNotOverwriteExistingFiles(t *testing.T) {
 
 	ctx := newTestCommandContext(rootDir)
 
-	if err := cmdInit(ctx); err != nil {
-		t.Fatalf("cmdInit() error = %v", err)
-	}
+	captureStdout(t, func() {
+		if err := cmdInit(ctx); err != nil {
+			t.Fatalf("cmdInit() error = %v", err)
+		}
+	})
 
 	tests := []struct {
 		path string
@@ -419,9 +431,11 @@ func TestCmdInitCreatesMissingFileWithoutOverwritingExistingOne(t *testing.T) {
 
 	ctx := newTestCommandContext(rootDir)
 
-	if err := cmdInit(ctx); err != nil {
-		t.Fatalf("cmdInit() error = %v", err)
-	}
+	captureStdout(t, func() {
+		if err := cmdInit(ctx); err != nil {
+			t.Fatalf("cmdInit() error = %v", err)
+		}
+	})
 
 	gotUp, err := os.ReadFile(upPath)
 	if err != nil {
@@ -450,10 +464,11 @@ func TestCmdInitReturnsErrorWhenDirectoryCannotBeCreated(t *testing.T) {
 	rootDir := filepath.Join(blocker, "sql")
 	ctx := newTestCommandContext(rootDir)
 
-	err := cmdInit(ctx)
-	if err == nil {
-		t.Fatal("expected cmdInit() to return an error")
-	}
+	captureStdout(t, func() {
+		if err := cmdInit(ctx); err == nil {
+			t.Fatal("expected cmdInit() to return an error")
+		}
+	})
 }
 
 func TestCmdStatusDatabaseOpenError(t *testing.T) {
