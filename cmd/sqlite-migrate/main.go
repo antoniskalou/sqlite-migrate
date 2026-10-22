@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -164,14 +166,43 @@ func logEvent(renderer renderer, options *loggerOptions) func(migrate.Event) {
 	}
 }
 
-func connectDB(path string, preventCreate bool) (*sql.DB, error) {
-	// TODO: sanitize paths
-	dsn := path
-
-	if preventCreate {
-		// rw mode doesn't create the DB if it doesn't exist
-		dsn = "file:" + path + "?mode=rw"
+func sqliteDsn(path string, options map[string]string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
 	}
+
+	if runtime.GOOS == "windows" {
+		// convert windows path separators to URI separators for windows to work we
+		// also need to append / before the root, e.g. C:\mydir becomes /C:/mydir
+		absPath = "/" + filepath.ToSlash(absPath)
+	}
+
+	url := url.URL{
+		Scheme: "file",
+		Path:   absPath,
+	}
+
+	q := url.Query()
+	for k, v := range options {
+		q.Set(k, v)
+	}
+	url.RawQuery = q.Encode()
+
+	return url.String(), nil
+}
+
+func connectDB(path string, preventCreate bool) (*sql.DB, error) {
+	dsnOpts := make(map[string]string)
+	if preventCreate {
+		dsnOpts["mode"] = "rw"
+	}
+
+	dsn, err := sqliteDsn(path, dsnOpts)
+	if err != nil {
+		return nil, fmt.Errorf("invalid DSN format: %w", err)
+	}
+	fmt.Println("DSN", dsn)
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
