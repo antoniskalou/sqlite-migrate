@@ -109,8 +109,9 @@ func main() {
 				Usage:     "rollback all applied migrations",
 				Arguments: []cli.Argument{&dbPathArg},
 				Flags: []cli.Flag{&cli.IntFlag{
-					Name:  "target",
-					Usage: "specify target version",
+					Name:     "target",
+					Required: true,
+					Usage:    "specify target version",
 				}},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					var target *int
@@ -202,7 +203,6 @@ func connectDB(path string, preventCreate bool) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid DSN format: %w", err)
 	}
-	fmt.Println("DSN", dsn)
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
