@@ -215,7 +215,7 @@ func TestConnectDB(t *testing.T) {
 		db, err := connectDB(path, true)
 		if err == nil {
 			if db != nil {
-				db.Close()
+				_ = db.Close()
 			}
 			t.Fatal("expected an error for a missing database")
 		}

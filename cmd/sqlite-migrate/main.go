@@ -212,7 +212,7 @@ func connectDB(path string, preventCreate bool) (*sql.DB, error) {
 	// fail early - Open only opens a handle, Ping checks that we can actually
 	// connect. e.g. if the DB doesn't exist in rw mode, this will die here.
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
