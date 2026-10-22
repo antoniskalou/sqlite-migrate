@@ -282,7 +282,10 @@ func cmdStatus(ctx commandContext, path string) error {
 		lines = append(lines, render(faintStyle, "  (none)"))
 	} else {
 		for _, migration := range applied {
-			lines = append(lines, render(upStyle, "  ✓ ")+migration)
+			lines = append(
+				lines,
+				render(upStyle, "  ✓ ")+filepath.Base(migration),
+			)
 		}
 	}
 
@@ -292,7 +295,10 @@ func cmdStatus(ctx commandContext, path string) error {
 		lines = append(lines, render(faintStyle, "  (none)"))
 	} else {
 		for _, migration := range pending {
-			lines = append(lines, render(pendingStyle, "  • ")+migration)
+			lines = append(
+				lines,
+				render(pendingStyle, "  • ")+filepath.Base(migration),
+			)
 		}
 	}
 

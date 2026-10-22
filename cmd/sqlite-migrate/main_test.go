@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -10,6 +11,38 @@ import (
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
 )
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = old
+	})
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = old
+
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	return string(output)
+}
 
 func TestWriteIfNotExists(t *testing.T) {
 	t.Parallel()
@@ -387,5 +420,134 @@ func TestCmdInitReturnsErrorWhenDirectoryCannotBeCreated(t *testing.T) {
 	err := cmdInit(ctx)
 	if err == nil {
 		t.Fatal("expected cmdInit() to return an error")
+	}
+}
+
+func TestCmdStatusDatabaseOpenError(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "missing.db")
+	ctx := newTestCommandContext(t.TempDir())
+
+	err := cmdStatus(ctx, path)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+
+	if !strings.Contains(err.Error(), "failed to open db at "+path) {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestCmdStatusEmptyDatabase(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	db, err := connectDB(dbPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := newTestCommandContext(rootDir)
+
+	output := captureStdout(t, func() {
+		if err := cmdStatus(ctx, dbPath); err != nil {
+			t.Fatalf("cmdStatus() error = %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Database status",
+		"Version:",
+		"Pending:",
+		"Applied migrations:",
+		"Pending migrations:",
+		"(none)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	migrations := map[string]string{
+		"001_create_users.up.sql": `
+create table users(
+	id integer primary key,
+	name text not null
+);
+`,
+		"001_create_users.down.sql": `
+drop table users;
+`,
+		"002_create_posts.up.sql": `
+create table posts (
+	id integer primary key,
+	title text not null
+);
+`,
+		"002_create_posts.down.sql": `
+drop table posts;
+`,
+	}
+
+	for name, content := range migrations {
+		if err := os.WriteFile(
+			filepath.Join(rootDir, name),
+			[]byte(content),
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx := newTestCommandContext(rootDir)
+
+	// apply the first migration, leaving the second pending
+	db, err := connectDB(dbPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := 1
+	_, err = ctx.migrator.Deploy(db, &target)
+	if err != nil {
+		db.Close()
+		t.Fatalf("Deploy() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := captureStdout(t, func() {
+		if err := cmdStatus(ctx, dbPath); err != nil {
+			t.Fatalf("cmdStatus() error = %v", err)
+		}
+	})
+
+	want := `Database status
+
+Version:   1
+Pending:   1
+
+Applied migrations:
+  ✓ 001_create_users.up.sql
+
+Pending migrations:
+  • 002_create_posts.up.sql`
+
+	if got != want {
+		t.Errorf("cmdStatus() output mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
