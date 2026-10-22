@@ -783,3 +783,104 @@ func TestCmdRollbackMigrationError(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+func TestLogEvent(t *testing.T) {
+	noColor := true
+	render := newRenderer(&noColor)
+
+	tests := []struct {
+		name    string
+		event   migrate.Event
+		verbose bool
+		want    string
+	}{
+		{
+			name: "skip",
+			event: migrate.Event{
+				Kind: migrate.EventSkip,
+				File: "001_create_users.up.sql",
+			},
+			want: "[SKIP] 001_create_users.up.sql (already applied)\n",
+		},
+		{
+			name: "apply up",
+			event: migrate.Event{
+				Kind:      migrate.EventApply,
+				File:      "001_create_users.up.sql",
+				Direction: migrate.Up,
+				Version:   1,
+			},
+			want: "[UP] 001_create_users.up.sql → user_version=1\n",
+		},
+		{
+			name: "apply down",
+			event: migrate.Event{
+				Kind:      migrate.EventApply,
+				File:      "001_create_users.down.sql",
+				Direction: migrate.Down,
+				Version:   1,
+			},
+			want: "[DOWN] 001_create_users.down.sql → user_version=1\n",
+		},
+		{
+			name: "SQL hidden when not verbose",
+			event: migrate.Event{
+				Kind: migrate.EventSQL,
+				SQL:  "create tale users (id integer);",
+			},
+			want: "",
+		},
+		{
+			name: "SQL shown when verbose",
+			event: migrate.Event{
+				Kind: migrate.EventSQL,
+				SQL:  "create table users (id integer);",
+			},
+			verbose: true,
+			want:    "create table users (id integer);\n",
+		},
+		{
+			name: "done",
+			event: migrate.Event{
+				Kind:    migrate.EventDone,
+				Version: 2,
+			},
+			want: "[DONE] user_version=2\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			options := &loggerOptions{verbose: tt.verbose}
+
+			got := captureStdout(t, func() {
+				logEvent(render, options)(tt.event)
+			})
+
+			if got != tt.want {
+				t.Errorf("logEvent() output:\ngot: %q\nwant: %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLogEventUnknownKindPanics(t *testing.T) {
+	noColor := true
+	render := newRenderer(&noColor)
+
+	defer func() {
+		got := recover()
+		if got == nil {
+			t.Fatal("expected logEvent to panic for an unknown event kind")
+		}
+
+		want := `unhandled event kind: "unknown"`
+		if got != want {
+			t.Errorf("panic = %v, want %q", got, want)
+		}
+	}()
+
+	logEvent(render, &loggerOptions{})(migrate.Event{
+		Kind: migrate.EventKind("unknown"),
+	})
+}
