@@ -33,12 +33,12 @@ func main() {
 	}
 	renderer := newRenderer(&loggerOptions.noColor)
 
+	migrator := migrate.Migrator{
+		OnEvent: logEvent(renderer, &loggerOptions),
+	}
 	commandCtx := commandContext{
 		renderer: renderer,
-		migrator: &migrate.Migrator{
-			RootDir: defaultMigrationDir,
-			OnEvent: logEvent(renderer, &loggerOptions),
-		},
+		migrator: &migrator,
 	}
 
 	dbPathArg := cli.StringArg{
@@ -59,6 +59,12 @@ func main() {
 				Name:        "no-color",
 				Usage:       "disable coloured output",
 				Destination: &loggerOptions.noColor,
+			},
+			&cli.StringFlag{
+				Name:        "root",
+				Usage:       "root of the migration directory",
+				Destination: &migrator.RootDir,
+				Value:       defaultMigrationDir,
 			},
 		},
 		Commands: []*cli.Command{
@@ -183,22 +189,23 @@ func connectDB(path string, preventCreate bool) (*sql.DB, error) {
 func cmdInit(ctx commandContext) error {
 	const sql = `-- code goes here`
 
-	err := os.MkdirAll(defaultMigrationDir, 0o755)
+	rootDir := ctx.migrator.RootDir
+	err := os.MkdirAll(rootDir, 0o755)
 	if err != nil {
 		return fmt.Errorf("failed to create migration dir: %w", err)
 	}
 
-	up := filepath.Join(defaultMigrationDir, "000_init.up.sql")
+	up := filepath.Join(rootDir, "000_init.up.sql")
 	if err := writeIfNotExists(up, sql); err != nil {
 		return fmt.Errorf("failed to write %s migration: %w", up, err)
 	}
 
-	down := filepath.Join(defaultMigrationDir, "000_init.down.sql")
+	down := filepath.Join(rootDir, "000_init.down.sql")
 	if err := writeIfNotExists(down, sql); err != nil {
 		return fmt.Errorf("failed to write %s migration: %w", down, err)
 	}
 
-	absDir, err := filepath.Abs(defaultMigrationDir)
+	absDir, err := filepath.Abs(rootDir)
 	if err != nil {
 		return fmt.Errorf("failed to resolve migration directory: %w", err)
 	}
