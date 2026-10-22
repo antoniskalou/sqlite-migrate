@@ -72,6 +72,7 @@ func main() {
 				Value:       defaultMigrationDir,
 			},
 		},
+		EnableShellCompletion: true,
 		Commands: []*cli.Command{
 			{
 				Name:  "init",
