@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"io"
 	"net/url"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
+	"github.com/antoniskalou/sqlite-migrate/internal/sqltest"
 )
 
 var stdoutMu sync.Mutex
@@ -62,26 +62,6 @@ func writeMigration(t *testing.T, dir, name, content string) {
 		0o644,
 	); err != nil {
 		t.Fatalf("write migration %s: %v", name, err)
-	}
-}
-
-func assertTableExists(t *testing.T, db *sql.DB, name string, want bool) {
-	t.Helper()
-
-	var count int
-	err := db.QueryRow(`
-		select count(*)
-		from sqlite_master
-		where type = 'table' and name = ?
-	`, name).Scan(&count)
-
-	if err != nil {
-		t.Fatalf("check table %s: %v", name, err)
-	}
-
-	got := count == 1
-	if got != want {
-		t.Errorf("table %s exists = %v, want %v", name, got, want)
 	}
 }
 
@@ -620,7 +600,7 @@ func TestCmdDeploy(t *testing.T) {
 	}
 	defer db.Close()
 
-	assertTableExists(t, db, "users", true)
+	sqltest.AssertTableExists(t, db, "users", true)
 }
 
 func TestCmdDeployTarget(t *testing.T) {
@@ -655,7 +635,7 @@ func TestCmdDeployTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.table, func(t *testing.T) {
-			assertTableExists(t, db, tt.table, tt.want)
+			sqltest.AssertTableExists(t, db, tt.table, tt.want)
 		})
 	}
 }
@@ -712,7 +692,7 @@ func TestCmdRollback(t *testing.T) {
 	}
 	defer db.Close()
 
-	assertTableExists(t, db, "users", false)
+	sqltest.AssertTableExists(t, db, "users", false)
 }
 
 func TestCmdRollbackTarget(t *testing.T) {
@@ -743,8 +723,8 @@ func TestCmdRollbackTarget(t *testing.T) {
 	}
 	defer db.Close()
 
-	assertTableExists(t, db, "users", true)
-	assertTableExists(t, db, "posts", false)
+	sqltest.AssertTableExists(t, db, "users", true)
+	sqltest.AssertTableExists(t, db, "posts", false)
 }
 
 func TestCmdRollbackMissingDatabase(t *testing.T) {

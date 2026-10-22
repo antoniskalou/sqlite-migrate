@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antoniskalou/sqlite-migrate/internal/sqltest"
 	_ "modernc.org/sqlite"
 )
 
@@ -77,26 +78,6 @@ func assertVersion(t *testing.T, m *Migrator, db *sql.DB, want int) {
 	}
 }
 
-func assertTableExists(t *testing.T, db *sql.DB, name string, want bool) {
-	t.Helper()
-
-	var count int
-	err := db.QueryRow(`
-		select count(*)
-		from sqlite_master
-		where type = 'table' and name = ?
-	`, name).Scan(&count)
-
-	if err != nil {
-		t.Fatalf("check table %s: %v", name, err)
-	}
-
-	got := count == 1
-	if got != want {
-		t.Errorf("table %s exists = %v, want %v", name, got, want)
-	}
-}
-
 func TestMigrationLifecycle(t *testing.T) {
 	m, db := newTestMigrator(t)
 
@@ -135,8 +116,8 @@ func TestMigrationLifecycle(t *testing.T) {
 		}
 
 		assertVersion(t, m, db, 2)
-		assertTableExists(t, db, "t1", true)
-		assertTableExists(t, db, "t2", true)
+		sqltest.AssertTableExists(t, db, "t1", true)
+		sqltest.AssertTableExists(t, db, "t2", true)
 
 		status, err := m.Status(db)
 		if err != nil {
@@ -160,8 +141,8 @@ func TestMigrationLifecycle(t *testing.T) {
 		}
 
 		assertVersion(t, m, db, 1)
-		assertTableExists(t, db, "t1", true)
-		assertTableExists(t, db, "t2", false)
+		sqltest.AssertTableExists(t, db, "t1", true)
+		sqltest.AssertTableExists(t, db, "t2", false)
 
 		status, err := m.Status(db)
 		if err != nil {
@@ -181,8 +162,8 @@ func TestMigrationLifecycle(t *testing.T) {
 			t.Fatalf("Deploy() = %d, want 2", got)
 		}
 
-		assertTableExists(t, db, "t1", true)
-		assertTableExists(t, db, "t2", true)
+		sqltest.AssertTableExists(t, db, "t1", true)
+		sqltest.AssertTableExists(t, db, "t2", true)
 	})
 
 	t.Run("rollback all", func(t *testing.T) {
@@ -195,8 +176,8 @@ func TestMigrationLifecycle(t *testing.T) {
 		}
 
 		assertVersion(t, m, db, 0)
-		assertTableExists(t, db, "t1", false)
-		assertTableExists(t, db, "t2", false)
+		sqltest.AssertTableExists(t, db, "t1", false)
+		sqltest.AssertTableExists(t, db, "t2", false)
 
 		status, err := m.Status(db)
 		if err != nil {
@@ -220,8 +201,8 @@ func TestDeployToTarget(t *testing.T) {
 		t.Fatalf("Deploy() = %d, want 1", got)
 	}
 
-	assertTableExists(t, db, "t1", true)
-	assertTableExists(t, db, "t2", false)
+	sqltest.AssertTableExists(t, db, "t1", true)
+	sqltest.AssertTableExists(t, db, "t2", false)
 
 	// deploying to the current version does nothing
 	got, err = m.Deploy(db, &target)
@@ -252,8 +233,8 @@ func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	}
 
 	assertVersion(t, m, db, 1)
-	assertTableExists(t, db, "t1", true)
-	assertTableExists(t, db, "t2", false)
+	sqltest.AssertTableExists(t, db, "t1", true)
+	sqltest.AssertTableExists(t, db, "t2", false)
 }
 
 func TestRollbackTargetValidation(t *testing.T) {
@@ -332,8 +313,8 @@ func TestRollbackFailurePreservesVersion(t *testing.T) {
 	}
 
 	assertVersion(t, m, db, 2)
-	assertTableExists(t, db, "t1", true)
-	assertTableExists(t, db, "t2", true)
+	sqltest.AssertTableExists(t, db, "t1", true)
+	sqltest.AssertTableExists(t, db, "t2", true)
 }
 
 func TestInvalidDeployTarget(t *testing.T) {
