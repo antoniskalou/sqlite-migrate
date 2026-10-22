@@ -103,7 +103,7 @@ func (m *Migrator) migrate(
 		return version, err
 	}
 
-	if !isValidTarget(target, len(files)) {
+	if !isTargetInRange(target, len(files)) {
 		return version, fmt.Errorf("invalid target version: %d", *target)
 	}
 
@@ -177,7 +177,7 @@ func (m *Migrator) applyMigration(
 	return nil
 }
 
-func isValidTarget(target *int, numMigrations int) bool {
+func isTargetInRange(target *int, numMigrations int) bool {
 	return target == nil || (*target >= 0 && *target <= numMigrations)
 }
 
@@ -220,6 +220,7 @@ func setUserVersion(db sqlExecutor, version int) error {
 }
 
 func migrations(root string, direction Direction) ([]string, error) {
+	// os.ReadDir sorts by filename
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
