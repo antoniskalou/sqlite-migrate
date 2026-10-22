@@ -1,0 +1,7 @@
+# Normalize text files in Git
+* text=auto
+
+# Keep Go source and module files LF on every OS
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
