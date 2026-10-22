@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	migrate "github.com/antoniskalou/sqlite-migrate"
 )
 
 func TestWriteIfNotExists(t *testing.T) {
@@ -244,4 +246,146 @@ func TestConnectDB(t *testing.T) {
 		}
 		_ = db.Close()
 	})
+}
+
+func newTestCommandContext(rootDir string) commandContext {
+	noColor := true
+	return commandContext{
+		renderer: newRenderer(&noColor),
+		migrator: &migrate.Migrator{
+			RootDir: rootDir,
+		},
+	}
+}
+
+func TestCmdInitCreatesMigrationFiles(t *testing.T) {
+	t.Parallel()
+
+	rootDir := filepath.Join(t.TempDir(), "sql")
+	ctx := newTestCommandContext(rootDir)
+
+	if err := cmdInit(ctx); err != nil {
+		t.Fatalf("cmdInit() error = %v", err)
+	}
+
+	if info, err := os.Stat(rootDir); err != nil {
+		t.Fatalf("migration directory was not created: %v", err)
+	} else if !info.IsDir() {
+		t.Fatal("migration path is not a directory")
+	}
+
+	for _, name := range []string{
+		"000_init.up.sql",
+		"000_init.down.sql",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(rootDir, name)
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("failed to read migration file: %v", err)
+			}
+
+			if string(content) == "" {
+				t.Error("content is empty")
+			}
+		})
+	}
+}
+
+func TestCmdInitDoesNotOverwriteExistingFiles(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+
+	upPath := filepath.Join(rootDir, "000_init.up.sql")
+	downPath := filepath.Join(rootDir, "000_init.down.sql")
+
+	originalUp := "-- custom up migration"
+	originalDown := "-- custom down migration"
+
+	if err := os.WriteFile(upPath, []byte(originalUp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(downPath, []byte(originalDown), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := newTestCommandContext(rootDir)
+
+	if err := cmdInit(ctx); err != nil {
+		t.Fatalf("cmdInit() error = %v", err)
+	}
+
+	tests := []struct {
+		path string
+		want string
+	}{
+		{path: upPath, want: originalUp},
+		{path: downPath, want: originalDown},
+	}
+
+	for _, tt := range tests {
+		got, err := os.ReadFile(tt.path)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", tt.path, err)
+		}
+
+		if string(got) != tt.want {
+			t.Errorf("%s content = %q, want %q",
+				filepath.Base(tt.path), string(got), tt.want)
+		}
+	}
+}
+
+func TestCmdInitCreatesMissingFileWithoutOverwritingExistingOne(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	upPath := filepath.Join(rootDir, "000_init.up.sql")
+	downPath := filepath.Join(rootDir, "000_init.down.sql")
+
+	originalUp := "-- keep my custom migration"
+
+	if err := os.WriteFile(upPath, []byte(originalUp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := newTestCommandContext(rootDir)
+
+	if err := cmdInit(ctx); err != nil {
+		t.Fatalf("cmdInit() error = %v", err)
+	}
+
+	gotUp, err := os.ReadFile(upPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotUp) != originalUp {
+		t.Errorf("existing migration was overwritten: %q", gotUp)
+	}
+
+	_, err = os.ReadFile(downPath)
+	if err != nil {
+		t.Fatalf("missing down migration was not created: %v", err)
+	}
+}
+
+func TestCmdInitReturnsErrorWhenDirectoryCannotBeCreated(t *testing.T) {
+	t.Parallel()
+
+	baseDir := t.TempDir()
+	blocker := filepath.Join(baseDir, "file")
+
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rootDir := filepath.Join(blocker, "sql")
+	ctx := newTestCommandContext(rootDir)
+
+	err := cmdInit(ctx)
+	if err == nil {
+		t.Fatal("expected cmdInit() to return an error")
+	}
 }
