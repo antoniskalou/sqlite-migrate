@@ -53,15 +53,13 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(output)
 }
 
-func writeMigration(t *testing.T, dir, name, content string) {
-	t.Helper()
-
-	if err := os.WriteFile(
-		filepath.Join(dir, name),
-		[]byte(strings.TrimSpace(content)+"\n"),
-		0o644,
-	); err != nil {
-		t.Fatalf("write migration %s: %v", name, err)
+func newTestCommandContext(rootDir string) commandContext {
+	noColor := true
+	return commandContext{
+		renderer: newRenderer(&noColor),
+		migrator: &migrate.Migrator{
+			RootDir: rootDir,
+		},
 	}
 }
 
@@ -302,16 +300,6 @@ func TestConnectDB(t *testing.T) {
 	})
 }
 
-func newTestCommandContext(rootDir string) commandContext {
-	noColor := true
-	return commandContext{
-		renderer: newRenderer(&noColor),
-		migrator: &migrate.Migrator{
-			RootDir: rootDir,
-		},
-	}
-}
-
 func TestCmdInitCreatesMigrationFiles(t *testing.T) {
 	t.Parallel()
 
@@ -530,7 +518,7 @@ func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 	rootDir := t.TempDir()
 
 	for name, content := range testMigrations {
-		writeMigration(t, rootDir, name, content)
+		sqltest.WriteMigration(t, rootDir, name, content)
 	}
 
 	ctx := newTestCommandContext(rootDir)
@@ -579,7 +567,7 @@ func TestCmdDeploy(t *testing.T) {
 
 	rootDir := t.TempDir()
 	for name, content := range testMigrations {
-		writeMigration(t, rootDir, name, content)
+		sqltest.WriteMigration(t, rootDir, name, content)
 	}
 
 	ctx := newTestCommandContext(rootDir)
@@ -608,7 +596,7 @@ func TestCmdDeployTarget(t *testing.T) {
 
 	rootDir := t.TempDir()
 	for name, content := range testMigrations {
-		writeMigration(t, rootDir, name, content)
+		sqltest.WriteMigration(t, rootDir, name, content)
 	}
 
 	ctx := newTestCommandContext(rootDir)
@@ -645,10 +633,10 @@ func TestCmdDeployMigrationError(t *testing.T) {
 
 	rootDir := t.TempDir()
 
-	writeMigration(t, rootDir, "001_invalid.up.sql", `
+	sqltest.WriteMigration(t, rootDir, "001_invalid.up.sql", `
 			this is not valid sql;
 		`)
-	writeMigration(t, rootDir, "001_invalid.down.sql", `
+	sqltest.WriteMigration(t, rootDir, "001_invalid.down.sql", `
 			select 1;
 		`)
 
@@ -671,7 +659,7 @@ func TestCmdRollback(t *testing.T) {
 	rootDir := t.TempDir()
 
 	for name, content := range testMigrations {
-		writeMigration(t, rootDir, name, content)
+		sqltest.WriteMigration(t, rootDir, name, content)
 	}
 
 	ctx := newTestCommandContext(rootDir)
@@ -701,7 +689,7 @@ func TestCmdRollbackTarget(t *testing.T) {
 	rootDir := t.TempDir()
 
 	for name, content := range testMigrations {
-		writeMigration(t, rootDir, name, content)
+		sqltest.WriteMigration(t, rootDir, name, content)
 	}
 
 	ctx := newTestCommandContext(rootDir)
@@ -752,13 +740,13 @@ func TestCmdRollbackMigrationError(t *testing.T) {
 
 	rootDir := t.TempDir()
 
-	writeMigration(t, rootDir, "001_create_users.up.sql", `
+	sqltest.WriteMigration(t, rootDir, "001_create_users.up.sql", `
 			create table users (
 				id integer primary key
 			);
 		`)
 
-	writeMigration(t, rootDir, "001_create_users.down.sql", `
+	sqltest.WriteMigration(t, rootDir, "001_create_users.down.sql", `
 			THIS IS NOT VALID SQL;
 		`)
 

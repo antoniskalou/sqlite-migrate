@@ -33,8 +33,8 @@ func main() {
 		verbose: false,
 		noColor: false,
 	}
-	renderer := newRenderer(&loggerOptions.noColor)
 
+	renderer := newRenderer(&loggerOptions.noColor)
 	migrator := migrate.Migrator{
 		OnEvent: logEvent(renderer, &loggerOptions),
 	}

@@ -2,7 +2,6 @@ package migrate
 
 import (
 	"database/sql"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -18,24 +17,24 @@ func newTestMigrator(t *testing.T) (*Migrator, *sql.DB) {
 
 	root := t.TempDir()
 
-	writeMigration(t, root, "000_t1.up.sql", `
+	sqltest.WriteMigration(t, root, "000_t1.up.sql", `
 		create table t1 (
 			id integer primary key autoincrement,
 			data text not null
 		);
 	`)
-	writeMigration(t, root, "000_t1.down.sql", `
+	sqltest.WriteMigration(t, root, "000_t1.down.sql", `
 		drop table t1;
 	`)
 
-	writeMigration(t, root, "001_t2.up.sql", `
+	sqltest.WriteMigration(t, root, "001_t2.up.sql", `
 		create table t2 (
 			id integer primary key autoincrement,
 			data text not null,
 			t1_id integer not null references t1(id)
 		);
 	`)
-	writeMigration(t, root, "001_t2.down.sql", `
+	sqltest.WriteMigration(t, root, "001_t2.down.sql", `
 		drop table t2;
 	`)
 
@@ -54,15 +53,6 @@ func newTestMigrator(t *testing.T) (*Migrator, *sql.DB) {
 	m := &Migrator{RootDir: root}
 
 	return m, db
-}
-
-func writeMigration(t *testing.T, root, name, contents string) {
-	t.Helper()
-
-	path := filepath.Join(root, name)
-	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
-		t.Fatalf("write migration %s: %v", name, err)
-	}
 }
 
 func assertVersion(t *testing.T, m *Migrator, db *sql.DB, want int) {
@@ -217,7 +207,7 @@ func TestDeployToTarget(t *testing.T) {
 func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	writeMigration(t, m.RootDir, "001_t2.up.sql", `
+	sqltest.WriteMigration(t, m.RootDir, "001_t2.up.sql", `
 		create table t2 (
 			id integer primary key
 		);
@@ -278,7 +268,7 @@ func TestMissingMigrationDirectory(t *testing.T) {
 func TestMigrationFailureReturnsError(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	writeMigration(t, m.RootDir, "000_t1.up.sql", `INVALID SQL;`)
+	sqltest.WriteMigration(t, m.RootDir, "000_t1.up.sql", `INVALID SQL;`)
 
 	got, err := m.Deploy(db, nil)
 	if err == nil {
@@ -302,7 +292,7 @@ func TestRollbackFailurePreservesVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	writeMigration(t, m.RootDir, "001_t2.down.sql", `INVALID SQL;`)
+	sqltest.WriteMigration(t, m.RootDir, "001_t2.down.sql", `INVALID SQL;`)
 
 	got, err := m.Rollback(db, 1)
 	if err == nil {
