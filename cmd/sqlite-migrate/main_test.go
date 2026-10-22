@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"io"
 	"net/url"
 	"os"
@@ -53,6 +54,26 @@ func writeMigration(t *testing.T, dir, name, content string) {
 		0o644,
 	); err != nil {
 		t.Fatalf("write migration %s: %v", name, err)
+	}
+}
+
+func assertTableExists(t *testing.T, db *sql.DB, name string, want bool) {
+	t.Helper()
+
+	var count int
+	err := db.QueryRow(`
+		select count(*)
+		from sqlite_master
+		where type = 'table' and name = ?
+	`, name).Scan(&count)
+
+	if err != nil {
+		t.Fatalf("check table %s: %v", name, err)
+	}
+
+	got := count == 1
+	if got != want {
+		t.Errorf("table %s exists = %v, want %v", name, got, want)
 	}
 }
 
@@ -584,18 +605,7 @@ func TestCmdDeploy(t *testing.T) {
 	}
 	defer db.Close()
 
-	var count int
-	err = db.QueryRow(`
-			select count (*)
-			from sqlite_master
-			where type = 'table' and name = 'users'
-		`).Scan(&count)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatal("expected users table to exist after deployment")
-	}
+	assertTableExists(t, db, "users", true)
 }
 
 func TestCmdDeployTarget(t *testing.T) {
@@ -630,20 +640,7 @@ func TestCmdDeployTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.table, func(t *testing.T) {
-			var count int
-			err := db.QueryRow(`
-					select count(*)
-					from sqlite_master
-					where type = 'table' and name = ?
-				`, tt.table).Scan(&count)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			got := count == 1
-			if got != tt.want {
-				t.Errorf("table %q exists = %v, want %v", tt.table, got, tt.want)
-			}
+			assertTableExists(t, db, tt.table, tt.want)
 		})
 	}
 }
@@ -669,6 +666,120 @@ func TestCmdDeployMigrationError(t *testing.T) {
 	}
 
 	if !strings.Contains(err.Error(), "deploy failed:") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestCmdRollback(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+
+	for name, content := range testMigrations {
+		writeMigration(t, rootDir, name, content)
+	}
+
+	ctx := newTestCommandContext(rootDir)
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
+		t.Fatalf("cmdDeploy() error = %v", err)
+	}
+
+	// rollback all
+	if err := cmdRollback(ctx, dbPath, 0); err != nil {
+		t.Fatalf("cmdRollback() error = %v", err)
+	}
+
+	db, err := connectDB(dbPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	assertTableExists(t, db, "users", false)
+}
+
+func TestCmdRollbackTarget(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+
+	for name, content := range testMigrations {
+		writeMigration(t, rootDir, name, content)
+	}
+
+	ctx := newTestCommandContext(rootDir)
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
+		t.Fatalf("Deploy() error = %v", err)
+	}
+
+	// rollback only the second migration
+	if err := cmdRollback(ctx, dbPath, 1); err != nil {
+		t.Fatalf("cmdRollback() error = %v", err)
+	}
+
+	db, err := connectDB(dbPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	assertTableExists(t, db, "users", true)
+	assertTableExists(t, db, "posts", false)
+}
+
+func TestCmdRollbackMissingDatabase(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "missing.db")
+	ctx := newTestCommandContext(t.TempDir())
+
+	err := cmdRollback(ctx, path, 0)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+
+	if !strings.Contains(err.Error(), "failed to open db at "+path) {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("database should not have been created; error = %v", err)
+	}
+}
+
+func TestCmdRollbackMigrationError(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+
+	writeMigration(t, rootDir, "001_create_users.up.sql", `
+			create table users (
+				id integer primary key
+			);
+		`)
+
+	writeMigration(t, rootDir, "001_create_users.down.sql", `
+			THIS IS NOT VALID SQL;
+		`)
+
+	ctx := newTestCommandContext(rootDir)
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
+		t.Fatalf("Deploy() error = %v", err)
+	}
+
+	err := cmdRollback(ctx, dbPath, 0)
+	if err == nil {
+		t.Fatal("expected rollback error")
+	}
+
+	if !strings.Contains(err.Error(), "rollback failed:") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
