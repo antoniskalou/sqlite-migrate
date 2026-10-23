@@ -18,7 +18,7 @@ a migration-history table.
 Install the CLI:
 
 ```bash
-go install github.com/antoniskalou/migrate/cmd/sqlite-migrate@latest
+go install github.com/antoniskalou/sqlite-migrate/cmd/sqlite-migrate@latest
 ```
 
 Check the available commands:
@@ -32,7 +32,7 @@ sqlite-migrate --help
 Install the library:
 
 ```bash
-go get github.com/antoniskalou/migrate
+go get github.com/antoniskalou/sqlite-migrate
 ```
 
 Example:
@@ -42,7 +42,7 @@ import (
   "fmt"
   "log"
 
-  "github.com/antoniskalou/migrate"
+  "github.com/antoniskalou/sqlite-migrate"
 )
 
 func main() {
@@ -169,5 +169,5 @@ go vet ./... && staticcheck ./...
 
 See [LICENSE](LICENSE).
 
-[1]: https://pkg.go.dev/github.com/antoniskalou/migrate
+[1]: https://pkg.go.dev/github.com/antoniskalou/sqlite-migrate
 [2]: https://sqlite.org/pragma.html#pragma_user_version
