@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the current version of the migrate library.
-const Version = "0.0.1"
+const Version = "0.0.2"
 
 // Migrator configures and executes SQL migrations against a SQLite database.
 type Migrator struct {
