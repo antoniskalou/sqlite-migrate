@@ -1,3 +1,13 @@
+// Package migrate applies and rolls back SQL migrations for SQLite databases.
+//
+// Migration state is stored in SQLite's PRAGMA user_version rather than in a
+// separate migration-history table. Migration files are selected by their
+// direction-specific suffix and processed in filename order.
+//
+// A migration directory contains .up.sql files for applying migrations and
+// (optional) .down.sql files for rolling them back. The current user_version
+// represents the number of migrations applied, so existing migration files and
+// their ordering must remain consistent with the database's migration state.
 package migrate
 
 import (
@@ -10,50 +20,65 @@ import (
 	"strings"
 )
 
+// Version is the current version of the migrate library.
 const Version = "0.0.1"
 
-// FIXME: awful doc
-// A Migrator is manages the initial configuration for the SQLite migrator.
+// Migrator configures and executes SQL migrations against a SQLite database.
 type Migrator struct {
+	// RootDir is the directory containing migration files.
 	RootDir string
+
+	// OnEvent, if non-nil, receives events emitted during migration execution.
 	OnEvent func(Event)
 }
 
-// A MigrationStatus represents the global status of applied migrations within
-// a SQLite project.
+// MigrationStatus describes the migration state inferred from a database's
+// user_version and the migration files in the configured directory.
 type MigrationStatus struct {
+	// Version is the current value of PRAGMA user_version
 	Version int
+
+	// Applied contains the paths of migrations considered applied.
 	Applied []string
+
+	// Pending contains the paths of migrations not yet applied.
 	Pending []string
 }
 
-// Deploy runs migrations in the configured RootDir. It optionally accepts a
-// target parameter to specify which "user version" the deployment should
-// run until.
+// Deploy applies migrations from the configured directory.
 //
-// A successful rollback returns err == nil. If the process was stopped due to
-// failure, the last applied "user version" is returned.
+// If target is nil, all pending migrations are applied. Otherwise, target
+// specifies the desired user_version and must be between zero and the number
+// of available up migrations, inclusive.
+//
+// Deploy returns the resulting user_version. If a migration fails, it returns
+// the last successfully applied version (zero if none applied) and the error.
+//
+// Each migration's SQL statements and the corresponding user_version update
+// are executed in a transaction.
 func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
 	return m.migrate(db, Up, target)
 }
 
-// Rollback reverses the migrations in the configured RootDir. It requires
-// a target parameter to specify which "user version" the deployment should
-// run until.
+// Rollback reverses migrations from the configured directory until the
+// specified target version is reached.
 //
-// A successful rollback returns err == nil. If the process was stopped due to
-// failure, the last applied "user version" is returned.
+// Rollback returns the resulting version. If a migration fails, it returns
+// the last successfully applied version and the error.
+//
+// Each rollback migration's SQL statements and the corresponding user_version
+// update are executed in a transaction.
 func (m *Migrator) Rollback(db *sql.DB, target int) (int, error) {
 	return m.migrate(db, Down, &target)
 }
 
-// Version returns the current "user version" of the database.
+// Version returns the database's current SQLite user_version.
 func (m *Migrator) Version(db *sql.DB) (int, error) {
 	return getUserVersion(db)
 }
 
-// Status returns a [MigrationStatus], constructed by querying the DB and
-// the RootDir in the filesystem.
+// Status reports which migrations are considered applied and pending based
+// on the database's user_version and the migration files in RootDir.
 func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 	version, err := getUserVersion(db)
 	if err != nil {
