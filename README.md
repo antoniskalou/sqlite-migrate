@@ -1,5 +1,7 @@
 # sqlite-migrate
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/antoniskalou/sqlite-migrate.svg)](https://pkg.go.dev/github.com/antoniskalou/sqlite-migrate)
+
 A lightweight, cross-platform SQLite migration tool that tracks applied
 migrations using SQLite's built-in `user_version` pragma, without creating
 a migration-history table.
