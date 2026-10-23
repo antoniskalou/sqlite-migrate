@@ -155,7 +155,7 @@ func (m *Migrator) migrate(
 			continue
 		}
 
-		nextVersion := version + direction.Delta()
+		nextVersion := version + direction.delta()
 
 		m.emit(Event{
 			Kind:      EventApply,

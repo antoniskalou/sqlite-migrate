@@ -18,7 +18,7 @@ func (d Direction) String() string {
 	}
 }
 
-func (d Direction) Delta() int {
+func (d Direction) delta() int {
 	switch d {
 	case Up:
 		return 1
