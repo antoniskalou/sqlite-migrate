@@ -167,7 +167,10 @@ go vet ./... && staticcheck ./...
 
 ## License
 
-See [LICENSE](LICENSE).
+Copyright © 2026 Antonis Kalou.
+
+This project is licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
+See the [LICENSE](LICENSE) file for the full license text.
 
 [1]: https://pkg.go.dev/github.com/antoniskalou/sqlite-migrate
 [2]: https://sqlite.org/pragma.html#pragma_user_version

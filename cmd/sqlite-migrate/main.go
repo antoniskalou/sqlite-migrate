@@ -48,10 +48,13 @@ func main() {
 		Required: true,
 	}
 	cmd := &cli.Command{
-		Name:      "sqlite-migrate",
-		Usage:     "migrate SQLite databases",
-		Copyright: "Copyright © 2026 Antonis Kalou. All rights reserved.\n\nSee LICENSE for details.",
-		Version:   migrate.Version,
+		Name:  "sqlite-migrate",
+		Usage: "migrate SQLite databases",
+		Copyright: `Copyright © 2026 Antonis Kalou
+
+License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
+See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
+		Version: migrate.Version,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:        "verbose",
