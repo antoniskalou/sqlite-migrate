@@ -53,6 +53,33 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(output)
 }
 
+var testMigrations = map[string]string{
+	"001_create_users.up.sql": `
+create table users(
+	id integer primary key,
+	name text not null
+);
+`,
+	"001_create_users.down.sql": `
+drop table users;
+`,
+	"002_create_posts.up.sql": `
+create table posts (
+	id integer primary key,
+	title text not null
+);
+`,
+	"002_create_posts.down.sql": `
+drop table posts;
+`,
+}
+
+func writeTestMigrations(t *testing.T, root string) {
+	for name, content := range testMigrations {
+		sqltest.WriteMigration(t, root, name, content)
+	}
+}
+
 func newTestCommandContext(rootDir string) commandContext {
 	noColor := true
 	return commandContext{
@@ -491,35 +518,12 @@ func TestCmdStatusEmptyDatabase(t *testing.T) {
 	}
 }
 
-var testMigrations = map[string]string{
-	"001_create_users.up.sql": `
-create table users(
-	id integer primary key,
-	name text not null
-);
-`,
-	"001_create_users.down.sql": `
-drop table users;
-`,
-	"002_create_posts.up.sql": `
-create table posts (
-	id integer primary key,
-	title text not null
-);
-`,
-	"002_create_posts.down.sql": `
-drop table posts;
-`,
-}
-
 func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 	t.Parallel()
 
 	rootDir := t.TempDir()
 
-	for name, content := range testMigrations {
-		sqltest.WriteMigration(t, rootDir, name, content)
-	}
+	writeTestMigrations(t, rootDir)
 
 	ctx := newTestCommandContext(rootDir)
 
@@ -566,9 +570,8 @@ func TestCmdDeploy(t *testing.T) {
 	t.Parallel()
 
 	rootDir := t.TempDir()
-	for name, content := range testMigrations {
-		sqltest.WriteMigration(t, rootDir, name, content)
-	}
+
+	writeTestMigrations(t, rootDir)
 
 	ctx := newTestCommandContext(rootDir)
 
@@ -595,9 +598,8 @@ func TestCmdDeployTarget(t *testing.T) {
 	t.Parallel()
 
 	rootDir := t.TempDir()
-	for name, content := range testMigrations {
-		sqltest.WriteMigration(t, rootDir, name, content)
-	}
+
+	writeTestMigrations(t, rootDir)
 
 	ctx := newTestCommandContext(rootDir)
 	target := 1
@@ -658,9 +660,7 @@ func TestCmdRollback(t *testing.T) {
 
 	rootDir := t.TempDir()
 
-	for name, content := range testMigrations {
-		sqltest.WriteMigration(t, rootDir, name, content)
-	}
+	writeTestMigrations(t, rootDir)
 
 	ctx := newTestCommandContext(rootDir)
 
@@ -688,9 +688,7 @@ func TestCmdRollbackTarget(t *testing.T) {
 
 	rootDir := t.TempDir()
 
-	for name, content := range testMigrations {
-		sqltest.WriteMigration(t, rootDir, name, content)
-	}
+	writeTestMigrations(t, rootDir)
 
 	ctx := newTestCommandContext(rootDir)
 
