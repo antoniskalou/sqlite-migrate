@@ -24,7 +24,7 @@ import (
 )
 
 // Version is the current version of the migrate library.
-const Version = "0.0.4"
+const Version = "0.0.5"
 
 // Migrator configures and executes SQL migrations against a SQLite database.
 type Migrator struct {
@@ -171,8 +171,9 @@ func (m *Migrator) migrate(
 		if (direction == Up && i < version) ||
 			(direction == Down && len(files)-i != version) {
 			m.emit(Event{
-				Kind: EventSkip,
-				File: path,
+				Kind:      EventSkip,
+				File:      path,
+				Direction: direction,
 			})
 			continue
 		}
