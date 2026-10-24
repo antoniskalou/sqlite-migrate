@@ -40,6 +40,14 @@ func newCommandContext(
 	return commandContext{renderer, migrator}
 }
 
+type commandActionFunc func(commandContext, *cli.Command) error
+
+func withCommandContext(opts *loggerOptions, f commandActionFunc) cli.ActionFunc {
+	return func(_ context.Context, cmd *cli.Command) error {
+		return f(newCommandContext(cmd, opts), cmd)
+	}
+}
+
 func main() {
 	loggerOptions := loggerOptions{
 		verbose: false,
@@ -82,18 +90,23 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 			{
 				Name:  "init",
 				Usage: "initialize the SQL migration directory",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdInit(newCommandContext(cmd, &loggerOptions))
-				},
+				Action: withCommandContext(
+					&loggerOptions,
+					func(ctx commandContext, _ *cli.Command) error {
+						return cmdInit(ctx)
+					},
+				),
 			},
 			{
 				Name:      "status",
 				Usage:     "print migration status of the database",
 				Arguments: []cli.Argument{&dbPathArg},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdStatus(
-						newCommandContext(cmd, &loggerOptions), cmd.StringArg("dbpath"))
-				},
+				Action: withCommandContext(
+					&loggerOptions,
+					func(ctx commandContext, cmd *cli.Command) error {
+						return cmdStatus(ctx, cmd.StringArg("dbpath"))
+					},
+				),
 			},
 			{
 				Name:      "deploy",
@@ -103,15 +116,18 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 					Name:  "target",
 					Usage: "specify target version",
 				}},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					var target *int
-					if cmd.IsSet("target") {
-						t := cmd.Int("target")
-						target = &t
-					}
-					return cmdDeploy(
-						newCommandContext(cmd, &loggerOptions), cmd.StringArg("dbpath"), target)
-				},
+				Action: withCommandContext(
+					&loggerOptions,
+					func(ctx commandContext, cmd *cli.Command) error {
+						var target *int
+						if cmd.IsSet("target") {
+							t := cmd.Int("target")
+							target = &t
+						}
+
+						return cmdDeploy(ctx, cmd.StringArg("dbpath"), target)
+					},
+				),
 			},
 			{
 				Name:      "rollback",
@@ -122,10 +138,12 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 					Required: true,
 					Usage:    "specify target version",
 				}},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdRollback(
-						newCommandContext(cmd, &loggerOptions), cmd.StringArg("dbpath"), cmd.Int("target"))
-				},
+				Action: withCommandContext(
+					&loggerOptions,
+					func(ctx commandContext, cmd *cli.Command) error {
+						return cmdRollback(ctx, cmd.StringArg("dbpath"), cmd.Int("target"))
+					},
+				),
 			},
 		},
 	}
