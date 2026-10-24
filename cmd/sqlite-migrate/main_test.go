@@ -81,9 +81,8 @@ func writeTestMigrations(t *testing.T, root string) {
 }
 
 func newTestCommandContext(rootDir string) commandContext {
-	noColor := true
 	return commandContext{
-		renderer: newRenderer(&noColor),
+		renderer: newRenderer(true),
 		migrator: migrate.New(rootDir, nil),
 	}
 }
@@ -764,8 +763,7 @@ func TestCmdRollbackMigrationError(t *testing.T) {
 }
 
 func TestLogEvent(t *testing.T) {
-	noColor := true
-	render := newRenderer(&noColor)
+	render := newRenderer(true)
 
 	tests := []struct {
 		name    string
@@ -830,7 +828,7 @@ func TestLogEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			options := &loggerOptions{verbose: tt.verbose}
+			options := loggerOptions{verbose: tt.verbose}
 
 			got := captureStdout(t, func() {
 				logEvent(render, options)(tt.event)
@@ -844,8 +842,7 @@ func TestLogEvent(t *testing.T) {
 }
 
 func TestLogEventUnknownKindPanics(t *testing.T) {
-	noColor := true
-	render := newRenderer(&noColor)
+	render := newRenderer(true)
 
 	defer func() {
 		got := recover()
@@ -859,7 +856,7 @@ func TestLogEventUnknownKindPanics(t *testing.T) {
 		}
 	}()
 
-	logEvent(render, &loggerOptions{})(migrate.Event{
+	logEvent(render, loggerOptions{})(migrate.Event{
 		Kind: migrate.EventKind("unknown"),
 	})
 }

@@ -21,10 +21,10 @@ var (
 
 type renderer func(lipgloss.Style, ...string) string
 
-func newRenderer(noColor *bool) renderer {
+func newRenderer(noColor bool) renderer {
 	return func(style lipgloss.Style, strs ...string) string {
 		s := style
-		if *noColor {
+		if noColor {
 			return strings.Join(strs, "")
 		}
 		return s.Render(strs...)

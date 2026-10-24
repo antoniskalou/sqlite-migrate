@@ -30,9 +30,9 @@ type commandContext struct {
 
 func newCommandContext(
 	cmd *cli.Command,
-	opts *loggerOptions,
+	opts loggerOptions,
 ) commandContext {
-	renderer := newRenderer(&opts.noColor)
+	renderer := newRenderer(opts.noColor)
 	migrator := migrate.New(
 		cmd.String("root"),
 		logEvent(renderer, opts),
@@ -42,7 +42,7 @@ func newCommandContext(
 
 type commandActionFunc func(commandContext, *cli.Command) error
 
-func withCommandContext(opts *loggerOptions, f commandActionFunc) cli.ActionFunc {
+func withCommandContext(opts loggerOptions, f commandActionFunc) cli.ActionFunc {
 	return func(_ context.Context, cmd *cli.Command) error {
 		return f(newCommandContext(cmd, opts), cmd)
 	}
@@ -91,7 +91,7 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Name:  "init",
 				Usage: "initialize the SQL migration directory",
 				Action: withCommandContext(
-					&loggerOptions,
+					loggerOptions,
 					func(ctx commandContext, _ *cli.Command) error {
 						return cmdInit(ctx)
 					},
@@ -102,7 +102,7 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Usage:     "print migration status of the database",
 				Arguments: []cli.Argument{&dbPathArg},
 				Action: withCommandContext(
-					&loggerOptions,
+					loggerOptions,
 					func(ctx commandContext, cmd *cli.Command) error {
 						return cmdStatus(ctx, cmd.StringArg("dbpath"))
 					},
@@ -117,7 +117,7 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 					Usage: "specify target version",
 				}},
 				Action: withCommandContext(
-					&loggerOptions,
+					loggerOptions,
 					func(ctx commandContext, cmd *cli.Command) error {
 						var target *int
 						if cmd.IsSet("target") {
@@ -139,7 +139,7 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 					Usage:    "specify target version",
 				}},
 				Action: withCommandContext(
-					&loggerOptions,
+					loggerOptions,
 					func(ctx commandContext, cmd *cli.Command) error {
 						return cmdRollback(ctx, cmd.StringArg("dbpath"), cmd.Int("target"))
 					},
@@ -149,13 +149,13 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		renderer := newRenderer(&loggerOptions.noColor)
+		renderer := newRenderer(loggerOptions.noColor)
 		fmt.Printf("%s %v\n", renderer(errorStyle, "[ERR]"), err)
 		os.Exit(1)
 	}
 }
 
-func logEvent(renderer renderer, options *loggerOptions) func(migrate.Event) {
+func logEvent(renderer renderer, options loggerOptions) func(migrate.Event) {
 	return func(e migrate.Event) {
 		switch e.Kind {
 		case migrate.EventSkip:
