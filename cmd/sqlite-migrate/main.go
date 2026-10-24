@@ -28,19 +28,22 @@ type commandContext struct {
 	migrator *migrate.Migrator
 }
 
+func newCommandContext(
+	cmd *cli.Command,
+	opts *loggerOptions,
+) commandContext {
+	renderer := newRenderer(&opts.noColor)
+	migrator := migrate.New(
+		cmd.String("root"),
+		logEvent(renderer, opts),
+	)
+	return commandContext{renderer, migrator}
+}
+
 func main() {
 	loggerOptions := loggerOptions{
 		verbose: false,
 		noColor: false,
-	}
-
-	renderer := newRenderer(&loggerOptions.noColor)
-	migrator := migrate.Migrator{
-		OnEvent: logEvent(renderer, &loggerOptions),
-	}
-	commandCtx := commandContext{
-		renderer: renderer,
-		migrator: &migrator,
 	}
 
 	dbPathArg := cli.StringArg{
@@ -69,10 +72,9 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Sources:     cli.EnvVars("NO_COLOR"),
 			},
 			&cli.StringFlag{
-				Name:        "root",
-				Usage:       "root of the migration directory",
-				Destination: &migrator.RootDir,
-				Value:       defaultMigrationDir,
+				Name:  "root",
+				Usage: "root of the migration directory",
+				Value: defaultMigrationDir,
 			},
 		},
 		EnableShellCompletion: true,
@@ -81,7 +83,7 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Name:  "init",
 				Usage: "initialize the SQL migration directory",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdInit(commandCtx)
+					return cmdInit(newCommandContext(cmd, &loggerOptions))
 				},
 			},
 			{
@@ -89,7 +91,8 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Usage:     "print migration status of the database",
 				Arguments: []cli.Argument{&dbPathArg},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdStatus(commandCtx, cmd.StringArg("dbpath"))
+					return cmdStatus(
+						newCommandContext(cmd, &loggerOptions), cmd.StringArg("dbpath"))
 				},
 			},
 			{
@@ -106,7 +109,8 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 						t := cmd.Int("target")
 						target = &t
 					}
-					return cmdDeploy(commandCtx, cmd.StringArg("dbpath"), target)
+					return cmdDeploy(
+						newCommandContext(cmd, &loggerOptions), cmd.StringArg("dbpath"), target)
 				},
 			},
 			{
@@ -119,13 +123,15 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 					Usage:    "specify target version",
 				}},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					return cmdRollback(commandCtx, cmd.StringArg("dbpath"), cmd.Int("target"))
+					return cmdRollback(
+						newCommandContext(cmd, &loggerOptions), cmd.StringArg("dbpath"), cmd.Int("target"))
 				},
 			},
 		},
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
+		renderer := newRenderer(&loggerOptions.noColor)
 		fmt.Printf("%s %v\n", renderer(errorStyle, "[ERR]"), err)
 		os.Exit(1)
 	}
@@ -222,7 +228,7 @@ func connectDB(path string, preventCreate bool) (*sql.DB, error) {
 func cmdInit(ctx commandContext) error {
 	const sql = `-- code goes here`
 
-	rootDir := ctx.migrator.RootDir
+	rootDir := ctx.migrator.RootDir()
 	err := os.MkdirAll(rootDir, 0o755)
 	if err != nil {
 		return fmt.Errorf("failed to create migration dir: %w", err)

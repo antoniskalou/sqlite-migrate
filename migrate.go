@@ -25,11 +25,8 @@ const Version = "0.0.2"
 
 // Migrator configures and executes SQL migrations against a SQLite database.
 type Migrator struct {
-	// RootDir is the directory containing migration files.
-	RootDir string
-
-	// OnEvent, if non-nil, receives events emitted during migration execution.
-	OnEvent func(Event)
+	rootDir string
+	onEvent func(Event)
 }
 
 // MigrationStatus describes the migration state inferred from a database's
@@ -43,6 +40,27 @@ type MigrationStatus struct {
 
 	// Pending contains the paths of migrations not yet applied.
 	Pending []string
+}
+
+// New creates a Migrator that uses rootDir as the directory containing
+// migration files.
+//
+// If rootDir is empty, New uses the current working directory, represented
+// by ".".
+//
+// If onEvent is non-nil, New configures the Migrator to deliver migration
+// events to onEvent
+func New(rootDir string, onEvent func(Event)) *Migrator {
+	if rootDir == "" {
+		rootDir = "."
+	}
+
+	return &Migrator{rootDir, onEvent}
+}
+
+// RootDir returns the directory containing migration files.
+func (m *Migrator) RootDir() string {
+	return m.rootDir
 }
 
 // Deploy applies migrations from the configured directory.
@@ -85,7 +103,7 @@ func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 		return nil, err
 	}
 
-	migrations, err := migrations(m.RootDir, Up)
+	migrations, err := migrations(m.rootDir, Up)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +127,8 @@ func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
 }
 
 func (m *Migrator) emit(event Event) {
-	if m.OnEvent != nil {
-		m.OnEvent(event)
+	if m.onEvent != nil {
+		m.onEvent(event)
 	}
 }
 
@@ -124,7 +142,7 @@ func (m *Migrator) migrate(
 		return 0, err
 	}
 
-	files, err := migrations(m.RootDir, direction)
+	files, err := migrations(m.rootDir, direction)
 	if err != nil {
 		return version, err
 	}

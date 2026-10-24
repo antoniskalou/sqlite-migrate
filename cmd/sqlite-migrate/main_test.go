@@ -84,9 +84,7 @@ func newTestCommandContext(rootDir string) commandContext {
 	noColor := true
 	return commandContext{
 		renderer: newRenderer(&noColor),
-		migrator: &migrate.Migrator{
-			RootDir: rootDir,
-		},
+		migrator: migrate.New(rootDir, nil),
 	}
 }
 

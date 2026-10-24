@@ -50,9 +50,7 @@ func newTestMigrator(t *testing.T) (*Migrator, *sql.DB) {
 
 	db.SetMaxOpenConns(1)
 
-	m := &Migrator{RootDir: root}
-
-	return m, db
+	return New(root, nil), db
 }
 
 func assertVersion(t *testing.T, m *Migrator, db *sql.DB, want int) {
@@ -88,8 +86,8 @@ func TestMigrationLifecycle(t *testing.T) {
 		}
 
 		want := []string{
-			filepath.Join(m.RootDir, "000_t1.up.sql"),
-			filepath.Join(m.RootDir, "001_t2.up.sql"),
+			filepath.Join(m.rootDir, "000_t1.up.sql"),
+			filepath.Join(m.rootDir, "001_t2.up.sql"),
 		}
 		if !reflect.DeepEqual(status.Pending, want) {
 			t.Errorf("Pending = %v, want %v", status.Pending, want)
@@ -207,7 +205,7 @@ func TestDeployToTarget(t *testing.T) {
 func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	sqltest.WriteMigration(t, m.RootDir, "001_t2.up.sql", `
+	sqltest.WriteMigration(t, m.rootDir, "001_t2.up.sql", `
 		create table t2 (
 			id integer primary key
 		);
@@ -251,7 +249,7 @@ func TestRollbackTargetValidation(t *testing.T) {
 }
 
 func TestMissingMigrationDirectory(t *testing.T) {
-	m := &Migrator{RootDir: filepath.Join(t.TempDir(), "missing")}
+	m := New(filepath.Join(t.TempDir(), "missing"), nil)
 
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -268,7 +266,7 @@ func TestMissingMigrationDirectory(t *testing.T) {
 func TestMigrationFailureReturnsError(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	sqltest.WriteMigration(t, m.RootDir, "000_t1.up.sql", `INVALID SQL;`)
+	sqltest.WriteMigration(t, m.rootDir, "000_t1.up.sql", `INVALID SQL;`)
 
 	got, err := m.Deploy(db, nil)
 	if err == nil {
@@ -292,7 +290,7 @@ func TestRollbackFailurePreservesVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sqltest.WriteMigration(t, m.RootDir, "001_t2.down.sql", `INVALID SQL;`)
+	sqltest.WriteMigration(t, m.rootDir, "001_t2.down.sql", `INVALID SQL;`)
 
 	got, err := m.Rollback(db, 1)
 	if err == nil {
