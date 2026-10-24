@@ -800,21 +800,16 @@ func TestLogEvent(t *testing.T) {
 			want: "[DOWN] 001_create_users.down.sql → user_version=1\n",
 		},
 		{
-			name: "SQL hidden when not verbose",
-			event: migrate.Event{
-				Kind: migrate.EventSQL,
-				SQL:  "create tale users (id integer);",
-			},
-			want: "",
-		},
-		{
 			name: "SQL shown when verbose",
 			event: migrate.Event{
-				Kind: migrate.EventSQL,
-				SQL:  "create table users (id integer);",
+				Kind:      migrate.EventApply,
+				File:      "001_create_users.up.sql",
+				Direction: migrate.Up,
+				Version:   1,
+				SQL:       "create table users (id integer);",
 			},
 			verbose: true,
-			want:    "create table users (id integer);\n",
+			want:    "[UP] 001_create_users.up.sql → user_version=1\ncreate table users (id integer);\n",
 		},
 		{
 			name: "done",

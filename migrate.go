@@ -175,21 +175,17 @@ func (m *Migrator) migrate(
 
 		nextVersion := version + direction.delta()
 
-		m.emit(Event{
-			Kind:      EventApply,
-			File:      path,
-			Direction: direction,
-			Version:   nextVersion,
-		})
-
 		sql, err := applyMigration(db, path, nextVersion)
 		if err != nil {
 			return version, err
 		}
 
 		m.emit(Event{
-			Kind: EventSQL,
-			SQL:  sql,
+			Kind:      EventApply,
+			File:      path,
+			Direction: direction,
+			Version:   nextVersion,
+			SQL:       sql,
 		})
 
 		version = nextVersion

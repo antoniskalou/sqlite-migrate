@@ -176,7 +176,7 @@ func logEvent(renderer renderer, options loggerOptions) func(migrate.Event) {
 				e.File,
 				renderer(versionStyle, strconv.Itoa(e.Version)),
 			)
-		case migrate.EventSQL:
+
 			if options.verbose {
 				fmt.Println(renderer(faintStyle, e.SQL))
 			}

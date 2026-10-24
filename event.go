@@ -8,11 +8,8 @@ const (
 	// applied or was not eligible to run.
 	EventSkip EventKind = "skip"
 
-	// EventApply indicates that a migration is about to be applied.
+	// EventApply indicates that a migration is has been applied.
 	EventApply EventKind = "apply"
-
-	// EventSQL indicates that a migration's SQL is being executed.
-	EventSQL EventKind = "sql"
 
 	// EventDone indicates that the migration operation has completed.
 	EventDone EventKind = "done"
