@@ -202,7 +202,7 @@ func (m *Migrator) applyMigration(
 ) error {
 	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return fmt.Errorf("begin migration %s: %w", path, err)
 	}
 	defer tx.Rollback()
 
@@ -211,7 +211,7 @@ func (m *Migrator) applyMigration(
 	}
 
 	if err := setUserVersion(tx, version); err != nil {
-		return fmt.Errorf("set migration version to %d: %w", version, err)
+		return fmt.Errorf("update user_version: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
