@@ -4,3 +4,4 @@ sql/
 
 # generated executables
 *.exe
+dist/

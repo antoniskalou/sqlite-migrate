@@ -1,0 +1,33 @@
+version: 2
+project_name: sqlite-migrate
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sqlite-migrate
+    main: ./cmd/sqlite-migrate
+    binary: sqlite-migrate
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums.txt
