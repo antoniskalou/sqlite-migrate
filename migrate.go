@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the current version of the migrate library.
-const Version = "0.0.3"
+const Version = "0.0.4"
 
 // Migrator configures and executes SQL migrations against a SQLite database.
 type Migrator struct {
@@ -182,9 +182,16 @@ func (m *Migrator) migrate(
 			Version:   nextVersion,
 		})
 
-		if err := m.applyMigration(db, path, nextVersion); err != nil {
+		sql, err := applyMigration(db, path, nextVersion)
+		if err != nil {
 			return version, err
 		}
+
+		m.emit(Event{
+			Kind: EventSQL,
+			SQL:  sql,
+		})
+
 		version = nextVersion
 	}
 
@@ -195,30 +202,31 @@ func (m *Migrator) migrate(
 	return version, nil
 }
 
-func (m *Migrator) applyMigration(
+func applyMigration(
 	db *sql.DB,
 	path string,
 	version int,
-) error {
+) (string, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin migration %s: %w", path, err)
+		return "", fmt.Errorf("begin migration %s: %w", path, err)
 	}
 	defer tx.Rollback()
 
-	if err := m.runSQLFile(tx, path); err != nil {
-		return err
+	sql, err := runSQLFile(tx, path)
+	if err != nil {
+		return sql, err
 	}
 
 	if err := setUserVersion(tx, version); err != nil {
-		return fmt.Errorf("update user_version: %w", err)
+		return sql, fmt.Errorf("update user_version: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit migration %s: %w", path, err)
+		return sql, fmt.Errorf("commit migration %s: %w", path, err)
 	}
 
-	return nil
+	return sql, nil
 }
 
 func isTargetInRange(target *int, numMigrations int) bool {
@@ -230,22 +238,19 @@ type sqlExecutor interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
 
-func (m *Migrator) runSQLFile(db sqlExecutor, file string) error {
+func runSQLFile(db sqlExecutor, file string) (string, error) {
 	sqlBytes, err := os.ReadFile(file)
 	if err != nil {
-		return fmt.Errorf("read SQL file %s: %w", file, err)
+		return "", fmt.Errorf("read SQL file %s: %w", file, err)
 	}
 
-	m.emit(Event{
-		Kind: EventSQL,
-		SQL:  string(sqlBytes),
-	})
+	sql := string(sqlBytes)
 
-	if _, err := db.Exec(string(sqlBytes)); err != nil {
-		return fmt.Errorf("execute SQL file %s: %w", file, err)
+	if _, err := db.Exec(sql); err != nil {
+		return sql, fmt.Errorf("execute SQL file %s: %w", file, err)
 	}
 
-	return nil
+	return sql, nil
 }
 
 func getUserVersion(db *sql.DB) (int, error) {
