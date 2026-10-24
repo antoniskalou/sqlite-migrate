@@ -338,7 +338,11 @@ func cmdDeploy(ctx commandContext, path string, target *int) error {
 	}
 	defer db.Close()
 
-	_, err = ctx.migrator.Deploy(db, target)
+	if target == nil {
+		_, err = ctx.migrator.DeployAll(db)
+	} else {
+		_, err = ctx.migrator.Deploy(db, *target)
+	}
 	if err != nil {
 		return fmt.Errorf("deploy failed: %w", err)
 	}

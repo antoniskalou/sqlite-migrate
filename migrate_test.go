@@ -95,7 +95,7 @@ func TestMigrationLifecycle(t *testing.T) {
 	})
 
 	t.Run("deploy all", func(t *testing.T) {
-		got, err := m.Deploy(db, nil)
+		got, err := m.DeployAll(db)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +142,7 @@ func TestMigrationLifecycle(t *testing.T) {
 	})
 
 	t.Run("redeploy", func(t *testing.T) {
-		got, err := m.Deploy(db, nil)
+		got, err := m.DeployAll(db)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -180,8 +180,7 @@ func TestMigrationLifecycle(t *testing.T) {
 func TestDeployToTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	target := 1
-	got, err := m.Deploy(db, &target)
+	got, err := m.Deploy(db, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +192,7 @@ func TestDeployToTarget(t *testing.T) {
 	sqltest.AssertTableExists(t, db, "t2", false)
 
 	// deploying to the current version does nothing
-	got, err = m.Deploy(db, &target)
+	got, err = m.Deploy(db, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +211,7 @@ func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 		invalid sql;
 	`)
 
-	got, err := m.Deploy(db, nil)
+	got, err := m.DeployAll(db)
 	if err == nil {
 		t.Fatal("Deploy() succeeded, want migration error")
 	}
@@ -228,7 +227,7 @@ func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 func TestRollbackTargetValidation(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	if _, err := m.Deploy(db, nil); err != nil {
+	if _, err := m.DeployAll(db); err != nil {
 		t.Fatal(err)
 	}
 
@@ -257,7 +256,7 @@ func TestMissingMigrationDirectory(t *testing.T) {
 	}
 	defer db.Close()
 
-	_, err = m.Deploy(db, nil)
+	_, err = m.DeployAll(db)
 	if err == nil {
 		t.Fatal("Deploy() succeeded with missing migration directory")
 	}
@@ -268,7 +267,7 @@ func TestMigrationFailureReturnsError(t *testing.T) {
 
 	sqltest.WriteMigration(t, m.rootDir, "000_t1.up.sql", `INVALID SQL;`)
 
-	got, err := m.Deploy(db, nil)
+	got, err := m.DeployAll(db)
 	if err == nil {
 		t.Fatal("Deploy() succeeded, want error")
 	}
@@ -286,7 +285,7 @@ func TestMigrationFailureReturnsError(t *testing.T) {
 func TestRollbackFailurePreservesVersion(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	if _, err := m.Deploy(db, nil); err != nil {
+	if _, err := m.DeployAll(db); err != nil {
 		t.Fatal(err)
 	}
 
@@ -309,7 +308,7 @@ func TestInvalidDeployTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
 	for _, target := range []int{-1, 3} {
-		got, err := m.Deploy(db, &target)
+		got, err := m.Deploy(db, target)
 		if err == nil {
 			t.Errorf("Deploy(%d) succeeded, want error", target)
 		}
@@ -323,13 +322,13 @@ func TestDeployPreviousTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
 	// deploy all first
-	version, err := m.Deploy(db, nil)
+	version, err := m.DeployAll(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// current version
-	got, err := m.Deploy(db, &version)
+	got, err := m.Deploy(db, version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +338,7 @@ func TestDeployPreviousTarget(t *testing.T) {
 
 	// previous version
 	target := version - 1
-	got, err = m.Deploy(db, &target)
+	got, err = m.Deploy(db, target)
 	if err != nil {
 		t.Fatal(err)
 	}

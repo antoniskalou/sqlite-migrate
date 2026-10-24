@@ -531,8 +531,7 @@ func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	target := 1
-	_, err = ctx.migrator.Deploy(db, &target)
+	_, err = ctx.migrator.Deploy(db, 1)
 	if err != nil {
 		db.Close()
 		t.Fatalf("Deploy() error = %v", err)

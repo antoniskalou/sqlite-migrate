@@ -8,6 +8,9 @@
 // (optional) .down.sql files for rolling them back. The current user_version
 // represents the number of migrations applied, so existing migration files and
 // their ordering must remain consistent with the database's migration state.
+//
+// Each migration's SQL statements and the corresponding user_version update
+// are executed in a transaction.
 package migrate
 
 import (
@@ -63,19 +66,23 @@ func (m *Migrator) RootDir() string {
 	return m.rootDir
 }
 
-// Deploy applies migrations from the configured directory.
+// DeployAll applies all pending migrations from the configured directory.
 //
-// If target is nil, all pending migrations are applied. Otherwise, target
-// specifies the desired user_version and must be between zero and the number
-// of available up migrations, inclusive.
+// DeployAll returns the resulting user_version. If a migration fails, it
+// returns the last successfully applied version and the error.
+func (m *Migrator) DeployAll(db *sql.DB) (int, error) {
+	return m.migrate(db, Up, nil)
+}
+
+// Deploy applies pending migrations until target is reached.
+//
+// target specifies the desired user_version and must be between zero and the
+// number of available up migrations, inclusive.
 //
 // Deploy returns the resulting user_version. If a migration fails, it returns
-// the last successfully applied version (zero if none applied) and the error.
-//
-// Each migration's SQL statements and the corresponding user_version update
-// are executed in a transaction.
-func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
-	return m.migrate(db, Up, target)
+// the last successfully applied version and the error.
+func (m *Migrator) Deploy(db *sql.DB, target int) (int, error) {
+	return m.migrate(db, Up, &target)
 }
 
 // Rollback reverses migrations from the configured directory until the
@@ -83,9 +90,6 @@ func (m *Migrator) Deploy(db *sql.DB, target *int) (int, error) {
 //
 // Rollback returns the resulting version. If a migration fails, it returns
 // the last successfully applied version and the error.
-//
-// Each rollback migration's SQL statements and the corresponding user_version
-// update are executed in a transaction.
 func (m *Migrator) Rollback(db *sql.DB, target int) (int, error) {
 	return m.migrate(db, Down, &target)
 }
