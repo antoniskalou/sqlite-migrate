@@ -101,29 +101,29 @@ func (m *Migrator) Version(db *sql.DB) (int, error) {
 
 // Status reports which migrations are considered applied and pending based
 // on the database's user_version and the migration files in RootDir.
-func (m *Migrator) Status(db *sql.DB) (*MigrationStatus, error) {
+func (m *Migrator) Status(db *sql.DB) (MigrationStatus, error) {
 	version, err := getUserVersion(db)
 	if err != nil {
-		return nil, err
+		return MigrationStatus{}, err
 	}
 
 	migrations, err := migrations(m.rootDir, Up)
 	if err != nil {
-		return nil, err
+		return MigrationStatus{}, err
 	}
 
 	applied := make([]string, 0)
 	pending := make([]string, 0)
 
-	for i, m := range migrations {
+	for i, migration := range migrations {
 		if i < version {
-			applied = append(applied, m)
+			applied = append(applied, migration)
 		} else {
-			pending = append(pending, m)
+			pending = append(pending, migration)
 		}
 	}
 
-	return &MigrationStatus{
+	return MigrationStatus{
 		Version: version,
 		Applied: applied,
 		Pending: pending,

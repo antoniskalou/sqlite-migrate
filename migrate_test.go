@@ -3,7 +3,7 @@ package migrate
 import (
 	"database/sql"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -69,27 +69,40 @@ func assertVersion(t *testing.T, m *Migrator, db *sql.DB, want int) {
 func TestMigrationLifecycle(t *testing.T) {
 	m, db := newTestMigrator(t)
 
+	type statusAssertion struct {
+		version    int
+		numApplied int
+		numPending int
+	}
+
+	assertStatus := func(t *testing.T, want statusAssertion, got MigrationStatus) {
+		t.Helper()
+
+		if got.Version != want.version {
+			t.Errorf("Version = %d, want %d", got.Version, want.version)
+		}
+
+		if len(got.Applied) != want.numApplied {
+			t.Errorf("Applied = %d, want %d", len(got.Applied), want.numApplied)
+		}
+
+		if len(got.Pending) != want.numPending {
+			t.Errorf("Pending = %d, want %d", len(got.Pending), want.numPending)
+		}
+	}
+
 	t.Run("initial status", func(t *testing.T) {
 		status, err := m.Status(db)
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		if status.Version != 0 {
-			t.Errorf("Version = %d, want 0", status.Version)
-		}
-		if len(status.Applied) != 0 {
-			t.Errorf("Applied = %v, want empty", status.Applied)
-		}
-		if len(status.Pending) != 2 {
-			t.Fatalf("Pending = %v, want 2 migrations", status.Pending)
-		}
+		assertStatus(t, statusAssertion{0, 0, 2}, status)
 
 		want := []string{
 			filepath.Join(m.rootDir, "000_t1.up.sql"),
 			filepath.Join(m.rootDir, "001_t2.up.sql"),
 		}
-		if !reflect.DeepEqual(status.Pending, want) {
+		if !slices.Equal(status.Pending, want) {
 			t.Errorf("Pending = %v, want %v", status.Pending, want)
 		}
 	})
@@ -111,12 +124,7 @@ func TestMigrationLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(status.Pending) != 0 {
-			t.Errorf("Pending = %v, want empty", status.Pending)
-		}
-		if len(status.Applied) != 2 {
-			t.Errorf("Applied = %v, want 2 migrations", status.Applied)
-		}
+		assertStatus(t, statusAssertion{2, 2, 0}, status)
 	})
 
 	t.Run("rollback one", func(t *testing.T) {
@@ -136,9 +144,7 @@ func TestMigrationLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(status.Applied) != 1 || len(status.Pending) != 1 {
-			t.Errorf("Status after rollback = %+v, want 1 applied and 1 pending", status)
-		}
+		assertStatus(t, statusAssertion{1, 1, 1}, status)
 	})
 
 	t.Run("redeploy", func(t *testing.T) {
@@ -147,7 +153,7 @@ func TestMigrationLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got != 2 {
-			t.Fatalf("Deploy() = %d, want 2", got)
+			t.Fatalf("DeployAll() = %d, want 2", got)
 		}
 
 		sqltest.AssertTableExists(t, db, "t1", true)
@@ -163,17 +169,14 @@ func TestMigrationLifecycle(t *testing.T) {
 			t.Fatalf("Rollback() = %d, want 0", got)
 		}
 
-		assertVersion(t, m, db, 0)
-		sqltest.AssertTableExists(t, db, "t1", false)
-		sqltest.AssertTableExists(t, db, "t2", false)
-
 		status, err := m.Status(db)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(status.Applied) != 0 || len(status.Pending) != 2 {
-			t.Errorf("Status after rollback = %+v, want 0 applied and 2 pending", status)
-		}
+		assertStatus(t, statusAssertion{0, 0, 2}, status)
+
+		sqltest.AssertTableExists(t, db, "t1", false)
+		sqltest.AssertTableExists(t, db, "t2", false)
 	})
 }
 
@@ -199,6 +202,9 @@ func TestDeployToTarget(t *testing.T) {
 	if got != 1 {
 		t.Errorf("Deploy() at current target = %d, want 1", got)
 	}
+
+	sqltest.AssertTableExists(t, db, "t1", true)
+	sqltest.AssertTableExists(t, db, "t2", false)
 }
 
 func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
