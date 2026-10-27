@@ -350,6 +350,27 @@ func TestDeployPreviousTarget(t *testing.T) {
 	}
 }
 
+func TestInvalidRollbackTarget(t *testing.T) {
+	m, db := newTestMigrator(t)
+
+	got, err := m.DeployAll(db)
+	assertResult(t, "DeployAll()", got, 2, err)
+
+	for _, target := range []int{-1, 3} {
+		name := strconv.Itoa(target)
+		t.Run(name, func(t *testing.T) {
+			got, err := m.Rollback(db, target)
+			assertFailure(t, "Rollback("+name+")", got, 2, err)
+
+			assertStatus(t, m, db, statusAssertion{
+				version: 2,
+				applied: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+			})
+			assertTables(t, db, true, true)
+		})
+	}
+}
+
 func TestPreviousRollbackTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
@@ -382,4 +403,22 @@ func TestPreviousRollbackTarget(t *testing.T) {
 		})
 		assertTables(t, db, true, false)
 	})
+}
+
+func TestVersion(t *testing.T) {
+	m, db := newTestMigrator(t)
+
+	got, err := m.Version(db)
+	assertResult(t, "Version()", got, 0, err)
+
+	for _, target := range []int{1, 2} {
+		name := strconv.Itoa(target)
+		t.Run(name, func(t *testing.T) {
+			got, err = m.Deploy(db, target)
+			assertResult(t, "DeployAll()", got, target, err)
+
+			got, err = m.Version(db)
+			assertResult(t, "Version()", got, target, err)
+		})
+	}
 }
