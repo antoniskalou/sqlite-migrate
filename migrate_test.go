@@ -53,158 +53,162 @@ func newTestMigrator(t *testing.T) (*Migrator, *sql.DB) {
 	return New(root, nil), db
 }
 
-func assertVersion(t *testing.T, m *Migrator, db *sql.DB, want int) {
+// gives paths relative to the root dir
+func migrationPaths(m *Migrator, names ...string) []string {
+	paths := make([]string, len(names))
+	for i, name := range names {
+		paths[i] = filepath.Join(m.RootDir(), name)
+	}
+	return paths
+}
+
+func assertResult(t *testing.T, operation string, got, want int, err error) {
 	t.Helper()
 
-	got, err := m.Version(db)
 	if err != nil {
-		t.Fatalf("Version(): %v", err)
+		t.Fatalf("%s: %v", operation, err)
 	}
 
 	if got != want {
-		t.Fatalf("Version() = %d, want %d", got, want)
+		t.Errorf("%s = %d, want %d", operation, got, want)
 	}
+}
+
+func assertFailure(t *testing.T, operation string, got, want int, err error) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatalf("%s succeeded, want error", operation)
+	}
+	if got != want {
+		t.Errorf("%s result = %d, want %d", operation, got, want)
+	}
+}
+
+type statusAssertion struct {
+	version int
+	applied []string
+	pending []string
+}
+
+func assertStatus(
+	t *testing.T,
+	m *Migrator,
+	db *sql.DB,
+	want statusAssertion,
+) {
+	t.Helper()
+
+	got, err := m.Status(db)
+	if err != nil {
+		t.Fatalf("Status(): %v", err)
+	}
+
+	if got.Version != want.version {
+		t.Errorf("Status().Version = %d, want %d", got.Version, want.version)
+	}
+
+	if !slices.Equal(got.Applied, want.applied) {
+		t.Errorf("Status().Applied = %v, want %v", got.Applied, want.applied)
+	}
+
+	if !slices.Equal(got.Pending, want.pending) {
+		t.Errorf("Status().Pending = %v, want %v", got.Pending, want.pending)
+	}
+}
+
+func assertTables(t *testing.T, db *sql.DB, t1, t2 bool) {
+	t.Helper()
+
+	sqltest.AssertTableExists(t, db, "t1", t1)
+	sqltest.AssertTableExists(t, db, "t2", t2)
 }
 
 func TestMigrationLifecycle(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	type statusAssertion struct {
-		version    int
-		numApplied int
-		numPending int
-	}
-
-	assertStatus := func(t *testing.T, want statusAssertion, got MigrationStatus) {
-		t.Helper()
-
-		if got.Version != want.version {
-			t.Errorf("Version = %d, want %d", got.Version, want.version)
-		}
-
-		if len(got.Applied) != want.numApplied {
-			t.Errorf("Applied = %d, want %d", len(got.Applied), want.numApplied)
-		}
-
-		if len(got.Pending) != want.numPending {
-			t.Errorf("Pending = %d, want %d", len(got.Pending), want.numPending)
-		}
-	}
+	t1 := migrationPaths(m, "000_t1.up.sql")
+	t2 := migrationPaths(m, "001_t2.up.sql")
+	all := slices.Concat(t1, t2)
 
 	t.Run("initial status", func(t *testing.T) {
-		status, err := m.Status(db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertStatus(t, statusAssertion{0, 0, 2}, status)
-
-		want := []string{
-			filepath.Join(m.rootDir, "000_t1.up.sql"),
-			filepath.Join(m.rootDir, "001_t2.up.sql"),
-		}
-		if !slices.Equal(status.Pending, want) {
-			t.Errorf("Pending = %v, want %v", status.Pending, want)
-		}
+		assertStatus(t, m, db, statusAssertion{
+			version: 0,
+			pending: all,
+		})
+		assertTables(t, db, false, false)
 	})
 
 	t.Run("deploy all", func(t *testing.T) {
 		got, err := m.DeployAll(db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != 2 {
-			t.Fatalf("Deploy() = %d, want 2", got)
-		}
+		assertResult(t, "DeployAll()", got, 2, err)
 
-		assertVersion(t, m, db, 2)
-		sqltest.AssertTableExists(t, db, "t1", true)
-		sqltest.AssertTableExists(t, db, "t2", true)
-
-		status, err := m.Status(db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertStatus(t, statusAssertion{2, 2, 0}, status)
+		assertStatus(t, m, db, statusAssertion{
+			version: 2,
+			applied: all,
+		})
+		assertTables(t, db, true, true)
 	})
 
 	t.Run("rollback one", func(t *testing.T) {
 		got, err := m.Rollback(db, 1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != 1 {
-			t.Fatalf("Rollback() = %d, want 1", got)
-		}
+		assertResult(t, "Rollback(1)", got, 1, err)
 
-		assertVersion(t, m, db, 1)
-		sqltest.AssertTableExists(t, db, "t1", true)
-		sqltest.AssertTableExists(t, db, "t2", false)
-
-		status, err := m.Status(db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertStatus(t, statusAssertion{1, 1, 1}, status)
+		assertStatus(t, m, db, statusAssertion{
+			version: 1,
+			applied: t1,
+			pending: t2,
+		})
+		assertTables(t, db, true, false)
 	})
 
 	t.Run("redeploy", func(t *testing.T) {
 		got, err := m.DeployAll(db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != 2 {
-			t.Fatalf("DeployAll() = %d, want 2", got)
-		}
+		assertResult(t, "DeployAll()", got, 2, err)
 
-		sqltest.AssertTableExists(t, db, "t1", true)
-		sqltest.AssertTableExists(t, db, "t2", true)
+		assertStatus(t, m, db, statusAssertion{
+			version: 2,
+			applied: all,
+		})
+		assertTables(t, db, true, true)
 	})
 
 	t.Run("rollback all", func(t *testing.T) {
 		got, err := m.Rollback(db, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != 0 {
-			t.Fatalf("Rollback() = %d, want 0", got)
-		}
+		assertResult(t, "Rollback(0)", got, 0, err)
 
-		status, err := m.Status(db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertStatus(t, statusAssertion{0, 0, 2}, status)
-
-		sqltest.AssertTableExists(t, db, "t1", false)
-		sqltest.AssertTableExists(t, db, "t2", false)
+		assertStatus(t, m, db, statusAssertion{
+			version: 0,
+			pending: all,
+		})
+		assertTables(t, db, false, false)
 	})
 }
 
 func TestDeployToTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	got, err := m.Deploy(db, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != 1 {
-		t.Fatalf("Deploy() = %d, want 1", got)
-	}
+	t1 := migrationPaths(m, "000_t1.up.sql")
+	t2 := migrationPaths(m, "001_t2.up.sql")
 
-	sqltest.AssertTableExists(t, db, "t1", true)
-	sqltest.AssertTableExists(t, db, "t2", false)
+	got, err := m.Deploy(db, 1)
+	assertResult(t, "Deploy(1)", got, 1, err)
+	assertStatus(t, m, db, statusAssertion{
+		version: 1,
+		applied: t1,
+		pending: t2,
+	})
+	assertTables(t, db, true, false)
 
 	// deploying to the current version does nothing
 	got, err = m.Deploy(db, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != 1 {
-		t.Errorf("Deploy() at current target = %d, want 1", got)
-	}
-
-	sqltest.AssertTableExists(t, db, "t1", true)
-	sqltest.AssertTableExists(t, db, "t2", false)
+	assertResult(t, "Deploy(1) at current version", got, 1, err)
+	assertStatus(t, m, db, statusAssertion{
+		version: 1,
+		applied: t1,
+		pending: t2,
+	})
+	assertTables(t, db, true, false)
 }
 
 func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
@@ -218,37 +222,33 @@ func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	`)
 
 	got, err := m.DeployAll(db)
-	if err == nil {
-		t.Fatal("Deploy() succeeded, want migration error")
-	}
-	if got != 1 {
-		t.Errorf("Deploy() = %d, want 1", got)
-	}
+	assertFailure(t, "Deploy()", got, 1, err)
 
-	assertVersion(t, m, db, 1)
-	sqltest.AssertTableExists(t, db, "t1", true)
-	sqltest.AssertTableExists(t, db, "t2", false)
+	assertStatus(t, m, db, statusAssertion{
+		version: 1,
+		applied: migrationPaths(m, "000_t1.up.sql"),
+		pending: migrationPaths(m, "001_t2.up.sql"),
+	})
+	assertTables(t, db, true, false)
 }
 
 func TestRollbackTargetValidation(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	if _, err := m.DeployAll(db); err != nil {
-		t.Fatal(err)
-	}
+	got, err := m.DeployAll(db)
+	assertResult(t, "DeployAll()", got, 2, err)
 
 	for _, target := range []int{-1, 3} {
-		t.Run(strings.ReplaceAll(
-			strconv.Itoa(target), "-", "minus",
-		), func(t *testing.T) {
+		name := strconv.Itoa(target)
+		t.Run(name, func(t *testing.T) {
 			got, err := m.Rollback(db, target)
-			if err == nil {
-				t.Errorf("Rollback(%d) succeeded, want error", target)
-			}
-			if got != 2 {
-				t.Errorf("Rollback(%d) = %d, want 2", target, got)
-			}
-			assertVersion(t, m, db, 2)
+			assertFailure(t, "Rollback("+name+")", got, 2, err)
+
+			assertStatus(t, m, db, statusAssertion{
+				version: 2,
+				applied: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+			})
+			assertTables(t, db, true, true)
 		})
 	}
 }
@@ -258,13 +258,16 @@ func TestMissingMigrationDirectory(t *testing.T) {
 
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("close database: %v", err)
 	}
 	defer db.Close()
 
-	_, err = m.DeployAll(db)
+	got, err := m.DeployAll(db)
 	if err == nil {
-		t.Fatal("Deploy() succeeded with missing migration directory")
+		t.Fatal("DeployAll() succeeded with missing migration directory")
+	}
+	if got != 0 {
+		t.Errorf("DeployAll() = %d, want 0", got)
 	}
 }
 
@@ -274,53 +277,52 @@ func TestMigrationFailureReturnsError(t *testing.T) {
 	sqltest.WriteMigration(t, m.rootDir, "000_t1.up.sql", `INVALID SQL;`)
 
 	got, err := m.DeployAll(db)
-	if err == nil {
-		t.Fatal("Deploy() succeeded, want error")
-	}
-	if got != 0 {
-		t.Errorf("Deploy() = %d, want 0", got)
-	}
-
-	assertVersion(t, m, db, 0)
+	assertFailure(t, "DeployAll()", got, 0, err)
 
 	if !strings.Contains(err.Error(), "000_t1.up.sql") {
 		t.Errorf("error %q does not mention migration filename", err)
 	}
+
+	assertStatus(t, m, db, statusAssertion{
+		version: 0,
+		pending: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+	})
+	assertTables(t, db, false, false)
 }
 
 func TestRollbackFailurePreservesVersion(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	if _, err := m.DeployAll(db); err != nil {
-		t.Fatal(err)
-	}
+	got, err := m.DeployAll(db)
+	assertResult(t, "DeployAll()", got, 2, err)
 
 	sqltest.WriteMigration(t, m.rootDir, "001_t2.down.sql", `INVALID SQL;`)
 
-	got, err := m.Rollback(db, 1)
-	if err == nil {
-		t.Fatal("Rollback() succeeded, want error")
-	}
-	if got != 2 {
-		t.Errorf("Rollback() = %d, want 2", got)
-	}
+	got, err = m.Rollback(db, 1)
+	assertFailure(t, "Rollback(1)", got, 2, err)
 
-	assertVersion(t, m, db, 2)
-	sqltest.AssertTableExists(t, db, "t1", true)
-	sqltest.AssertTableExists(t, db, "t2", true)
+	assertStatus(t, m, db, statusAssertion{
+		version: 2,
+		applied: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+	})
+	assertTables(t, db, true, true)
 }
 
 func TestInvalidDeployTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
 	for _, target := range []int{-1, 3} {
-		got, err := m.Deploy(db, target)
-		if err == nil {
-			t.Errorf("Deploy(%d) succeeded, want error", target)
-		}
-		if got != 0 {
-			t.Errorf("Deploy(%d) = %d, want 0", target, got)
-		}
+		name := strconv.Itoa(target)
+		t.Run(name, func(t *testing.T) {
+			got, err := m.Deploy(db, target)
+			assertFailure(t, "Deploy("+name+")", got, 0, err)
+
+			assertStatus(t, m, db, statusAssertion{
+				version: 0,
+				pending: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+			})
+			assertTables(t, db, false, false)
+		})
 	}
 }
 
@@ -328,56 +330,56 @@ func TestDeployPreviousTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
 	// deploy all first
-	version, err := m.DeployAll(db)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got, err := m.DeployAll(db)
+	assertResult(t, "DeployAll()", got, 2, err)
 
-	// current version
-	got, err := m.Deploy(db, version)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != version {
-		t.Errorf("Deploy(%d) = %d, want %d", version, got, version)
-	}
+	all := migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql")
+	for _, target := range []int{2, 1} {
+		name := strconv.Itoa(target)
+		t.Run(name, func(t *testing.T) {
+			got, err := m.Deploy(db, target)
+			assertResult(t, "Deploy("+name+")", got, 2, err)
 
-	// previous version
-	target := version - 1
-	got, err = m.Deploy(db, target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != version {
-		t.Errorf("Deploy(%d) = %d, want %d", target, got, version)
+			// deploy must not roll back when the target is below the current version
+			assertStatus(t, m, db, statusAssertion{
+				version: 2,
+				applied: all,
+			})
+			assertTables(t, db, true, true)
+		})
 	}
 }
 
 func TestPreviousRollbackTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	// rollback all first
-	version, err := m.Rollback(db, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got, err := m.DeployAll(db)
+	assertResult(t, "DeployAll()", got, 2, err)
 
-	// current version
-	got, err := m.Rollback(db, version)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != version {
-		t.Errorf("Deploy(%d) = %d, want %d", version, got, version)
-	}
+	t1 := migrationPaths(m, "000_t1.up.sql")
+	all := migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql")
 
-	// next version
-	target := version + 1
-	got, err = m.Rollback(db, target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != version {
-		t.Errorf("Deploy(%d) = %d, want %d", target, got, version)
-	}
+	t.Run("current version", func(t *testing.T) {
+		got, err := m.Rollback(db, 2)
+		assertResult(t, "Rollback(2)", got, 2, err)
+
+		// a target at or above the current version must not change the state
+		assertStatus(t, m, db, statusAssertion{
+			version: 2,
+			applied: all,
+		})
+		assertTables(t, db, true, true)
+	})
+
+	t.Run("previous version", func(t *testing.T) {
+		got, err := m.Rollback(db, 1)
+		assertResult(t, "Rollback(1)", got, 1, err)
+
+		assertStatus(t, m, db, statusAssertion{
+			version: 1,
+			applied: t1,
+			pending: migrationPaths(m, "001_t2.up.sql"),
+		})
+		assertTables(t, db, true, false)
+	})
 }
