@@ -12,29 +12,36 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	migrationT1Up   = "000_t1.up.sql"
+	migrationT1Down = "000_t1.down.sql"
+	migrationT2Up   = "001_t2.up.sql"
+	migrationT2Down = "001_t2.down.sql"
+)
+
 func newTestMigrator(t *testing.T) (*Migrator, *sql.DB) {
 	t.Helper()
 
 	root := t.TempDir()
 
-	sqltest.WriteMigration(t, root, "000_t1.up.sql", `
+	sqltest.WriteMigration(t, root, migrationT1Up, `
 		create table t1 (
 			id integer primary key autoincrement,
 			data text not null
 		);
 	`)
-	sqltest.WriteMigration(t, root, "000_t1.down.sql", `
+	sqltest.WriteMigration(t, root, migrationT1Down, `
 		drop table t1;
 	`)
 
-	sqltest.WriteMigration(t, root, "001_t2.up.sql", `
+	sqltest.WriteMigration(t, root, migrationT2Up, `
 		create table t2 (
 			id integer primary key autoincrement,
 			data text not null,
 			t1_id integer not null references t1(id)
 		);
 	`)
-	sqltest.WriteMigration(t, root, "001_t2.down.sql", `
+	sqltest.WriteMigration(t, root, migrationT2Down, `
 		drop table t2;
 	`)
 
@@ -127,8 +134,8 @@ func assertTables(t *testing.T, db *sql.DB, t1, t2 bool) {
 func TestMigrationLifecycle(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	t1 := migrationPaths(m, "000_t1.up.sql")
-	t2 := migrationPaths(m, "001_t2.up.sql")
+	t1 := migrationPaths(m, migrationT1Up)
+	t2 := migrationPaths(m, migrationT2Up)
 	all := slices.Concat(t1, t2)
 
 	t.Run("initial status", func(t *testing.T) {
@@ -188,8 +195,8 @@ func TestMigrationLifecycle(t *testing.T) {
 func TestDeployToTarget(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	t1 := migrationPaths(m, "000_t1.up.sql")
-	t2 := migrationPaths(m, "001_t2.up.sql")
+	t1 := migrationPaths(m, migrationT1Up)
+	t2 := migrationPaths(m, migrationT2Up)
 
 	got, err := m.Deploy(db, 1)
 	assertResult(t, "Deploy(1)", got, 1, err)
@@ -214,7 +221,7 @@ func TestDeployToTarget(t *testing.T) {
 func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	sqltest.WriteMigration(t, m.rootDir, "001_t2.up.sql", `
+	sqltest.WriteMigration(t, m.rootDir, migrationT2Up, `
 		create table t2 (
 			id integer primary key
 		);
@@ -226,8 +233,8 @@ func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 
 	assertStatus(t, m, db, statusAssertion{
 		version: 1,
-		applied: migrationPaths(m, "000_t1.up.sql"),
-		pending: migrationPaths(m, "001_t2.up.sql"),
+		applied: migrationPaths(m, migrationT1Up),
+		pending: migrationPaths(m, migrationT2Up),
 	})
 	assertTables(t, db, true, false)
 }
@@ -246,7 +253,7 @@ func TestRollbackTargetValidation(t *testing.T) {
 
 			assertStatus(t, m, db, statusAssertion{
 				version: 2,
-				applied: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+				applied: migrationPaths(m, migrationT1Up, migrationT2Up),
 			})
 			assertTables(t, db, true, true)
 		})
@@ -274,18 +281,18 @@ func TestMissingMigrationDirectory(t *testing.T) {
 func TestMigrationFailureReturnsError(t *testing.T) {
 	m, db := newTestMigrator(t)
 
-	sqltest.WriteMigration(t, m.rootDir, "000_t1.up.sql", `INVALID SQL;`)
+	sqltest.WriteMigration(t, m.rootDir, migrationT1Up, `INVALID SQL;`)
 
 	got, err := m.DeployAll(db)
 	assertFailure(t, "DeployAll()", got, 0, err)
 
-	if !strings.Contains(err.Error(), "000_t1.up.sql") {
+	if !strings.Contains(err.Error(), migrationT1Up) {
 		t.Errorf("error %q does not mention migration filename", err)
 	}
 
 	assertStatus(t, m, db, statusAssertion{
 		version: 0,
-		pending: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+		pending: migrationPaths(m, migrationT1Up, migrationT2Up),
 	})
 	assertTables(t, db, false, false)
 }
@@ -296,14 +303,14 @@ func TestRollbackFailurePreservesVersion(t *testing.T) {
 	got, err := m.DeployAll(db)
 	assertResult(t, "DeployAll()", got, 2, err)
 
-	sqltest.WriteMigration(t, m.rootDir, "001_t2.down.sql", `INVALID SQL;`)
+	sqltest.WriteMigration(t, m.rootDir, migrationT2Down, `INVALID SQL;`)
 
 	got, err = m.Rollback(db, 1)
 	assertFailure(t, "Rollback(1)", got, 2, err)
 
 	assertStatus(t, m, db, statusAssertion{
 		version: 2,
-		applied: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+		applied: migrationPaths(m, migrationT1Up, migrationT2Up),
 	})
 	assertTables(t, db, true, true)
 }
@@ -319,7 +326,7 @@ func TestInvalidDeployTarget(t *testing.T) {
 
 			assertStatus(t, m, db, statusAssertion{
 				version: 0,
-				pending: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+				pending: migrationPaths(m, migrationT1Up, migrationT2Up),
 			})
 			assertTables(t, db, false, false)
 		})
@@ -333,7 +340,7 @@ func TestDeployPreviousTarget(t *testing.T) {
 	got, err := m.DeployAll(db)
 	assertResult(t, "DeployAll()", got, 2, err)
 
-	all := migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql")
+	all := migrationPaths(m, migrationT1Up, migrationT2Up)
 	for _, target := range []int{2, 1} {
 		name := strconv.Itoa(target)
 		t.Run(name, func(t *testing.T) {
@@ -364,7 +371,7 @@ func TestInvalidRollbackTarget(t *testing.T) {
 
 			assertStatus(t, m, db, statusAssertion{
 				version: 2,
-				applied: migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql"),
+				applied: migrationPaths(m, migrationT1Up, migrationT2Up),
 			})
 			assertTables(t, db, true, true)
 		})
@@ -377,8 +384,8 @@ func TestPreviousRollbackTarget(t *testing.T) {
 	got, err := m.DeployAll(db)
 	assertResult(t, "DeployAll()", got, 2, err)
 
-	t1 := migrationPaths(m, "000_t1.up.sql")
-	all := migrationPaths(m, "000_t1.up.sql", "001_t2.up.sql")
+	t1 := migrationPaths(m, migrationT1Up)
+	all := migrationPaths(m, migrationT1Up, migrationT2Up)
 
 	t.Run("current version", func(t *testing.T) {
 		got, err := m.Rollback(db, 2)
@@ -399,7 +406,7 @@ func TestPreviousRollbackTarget(t *testing.T) {
 		assertStatus(t, m, db, statusAssertion{
 			version: 1,
 			applied: t1,
-			pending: migrationPaths(m, "001_t2.up.sql"),
+			pending: migrationPaths(m, migrationT2Up),
 		})
 		assertTables(t, db, true, false)
 	})
