@@ -20,7 +20,7 @@ type Event struct {
 	// Kind identifies the event type.
 	Kind EventKind
 
-	// File is the absolute path of the migration file associated with the event.
+	// File is the name of the migration file (relative to the fs.FS root).
 	File string
 
 	// Direction indicates whether migrations are being applied or rolled back.
