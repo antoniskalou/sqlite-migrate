@@ -16,8 +16,7 @@ package migrate
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,10 +25,12 @@ import (
 // Version is the current version of the migrate library.
 const Version = "0.0.5"
 
+type OnEventFunc func(Event)
+
 // Migrator configures and executes SQL migrations against a SQLite database.
 type Migrator struct {
-	rootDir string
-	onEvent func(Event)
+	fsys    fs.FS
+	onEvent OnEventFunc
 }
 
 // MigrationStatus describes the migration state inferred from a database's
@@ -45,25 +46,13 @@ type MigrationStatus struct {
 	Pending []string
 }
 
-// New creates a Migrator that uses rootDir as the directory containing
-// migration files.
-//
-// If rootDir is empty, New uses the current working directory, represented
-// by ".".
+// New creates a Migrator that uses the given instance of fs.FS as the
+// directory containing migration files.
 //
 // If onEvent is non-nil, New configures the Migrator to deliver migration
 // events to onEvent
-func New(rootDir string, onEvent func(Event)) *Migrator {
-	if rootDir == "" {
-		rootDir = "."
-	}
-
-	return &Migrator{rootDir, onEvent}
-}
-
-// RootDir returns the directory containing migration files.
-func (m *Migrator) RootDir() string {
-	return m.rootDir
+func New(fsys fs.FS, onEvent OnEventFunc) *Migrator {
+	return &Migrator{fsys, onEvent}
 }
 
 // DeployAll applies all pending migrations from the configured directory.
@@ -100,14 +89,15 @@ func (m *Migrator) Version(db *sql.DB) (int, error) {
 }
 
 // Status reports which migrations are considered applied and pending based
-// on the database's user_version and the migration files in RootDir.
+// on the database's user_version and the migration files in the provided
+// filesystem.
 func (m *Migrator) Status(db *sql.DB) (MigrationStatus, error) {
 	version, err := getUserVersion(db)
 	if err != nil {
 		return MigrationStatus{}, err
 	}
 
-	migrations, err := migrations(m.rootDir, Up)
+	migrations, err := migrations(m.fsys, Up)
 	if err != nil {
 		return MigrationStatus{}, err
 	}
@@ -146,7 +136,7 @@ func (m *Migrator) migrate(
 		return 0, err
 	}
 
-	files, err := migrations(m.rootDir, direction)
+	files, err := migrations(m.fsys, direction)
 	if err != nil {
 		return version, err
 	}
@@ -180,7 +170,7 @@ func (m *Migrator) migrate(
 
 		nextVersion := version + direction.delta()
 
-		sql, err := applyMigration(db, path, nextVersion)
+		sql, err := applyMigration(db, m.fsys, path, nextVersion)
 		if err != nil {
 			return version, err
 		}
@@ -205,6 +195,7 @@ func (m *Migrator) migrate(
 
 func applyMigration(
 	db *sql.DB,
+	fsys fs.FS,
 	path string,
 	version int,
 ) (string, error) {
@@ -214,7 +205,7 @@ func applyMigration(
 	}
 	defer tx.Rollback()
 
-	sql, err := runSQLFile(tx, path)
+	sql, err := runSQLFile(tx, fsys, path)
 	if err != nil {
 		return sql, err
 	}
@@ -239,8 +230,8 @@ type sqlExecutor interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
 
-func runSQLFile(db sqlExecutor, file string) (string, error) {
-	sqlBytes, err := os.ReadFile(file)
+func runSQLFile(db sqlExecutor, fsys fs.FS, file string) (string, error) {
+	sqlBytes, err := fs.ReadFile(fsys, file)
 	if err != nil {
 		return "", fmt.Errorf("read SQL file %s: %w", file, err)
 	}
@@ -269,9 +260,9 @@ func setUserVersion(db sqlExecutor, version int) error {
 	return err
 }
 
-func migrations(root string, direction Direction) ([]string, error) {
+func migrations(fsys fs.FS, direction Direction) ([]string, error) {
 	// os.ReadDir sorts by filename
-	entries, err := os.ReadDir(root)
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +276,7 @@ func migrations(root string, direction Direction) ([]string, error) {
 		}
 
 		if strings.HasSuffix(entry.Name(), suffix) {
-			files = append(files, filepath.Join(root, entry.Name()))
+			files = append(files, entry.Name())
 		}
 	}
 	return files, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -24,8 +25,11 @@ type loggerOptions struct {
 }
 
 type commandContext struct {
+	rootDir  string
 	renderer renderer
 	migrator *migrate.Migrator
+	stdout   io.Writer
+	stderr   io.Writer
 }
 
 func newCommandContext(
@@ -36,12 +40,21 @@ func newCommandContext(
 		noColor: cmd.Bool("no-color"),
 	}
 
+	rootDir := cmd.String("root")
+
 	renderer := newRenderer(opts.noColor)
 	migrator := migrate.New(
-		cmd.String("root"),
+		// TODO: verification
+		os.DirFS(rootDir),
 		logEvent(renderer, opts),
 	)
-	return commandContext{renderer, migrator}
+	return commandContext{
+		rootDir:  rootDir,
+		renderer: renderer,
+		migrator: migrator,
+		stdout:   cmd.Writer,
+		stderr:   cmd.ErrWriter,
+	}
 }
 
 type commandActionFunc func(commandContext, *cli.Command) error
@@ -86,9 +99,9 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 		Commands: []*cli.Command{
 			{
 				Name:  "init",
-				Usage: "initialize the SQL migration directory",
+				Usage: "initialise the SQL migration directory",
 				Action: withCommandContext(
-					func(ctx commandContext, _ *cli.Command) error {
+					func(ctx commandContext, cmd *cli.Command) error {
 						return cmdInit(ctx)
 					},
 				),
@@ -246,7 +259,7 @@ func connectDB(path string, preventCreate bool) (*sql.DB, error) {
 func cmdInit(ctx commandContext) error {
 	const sql = `-- code goes here`
 
-	rootDir := ctx.migrator.RootDir()
+	rootDir := ctx.rootDir
 	err := os.MkdirAll(rootDir, 0o755)
 	if err != nil {
 		return fmt.Errorf("failed to create migration dir: %w", err)

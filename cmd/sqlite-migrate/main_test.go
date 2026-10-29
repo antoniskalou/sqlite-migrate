@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
 	"github.com/antoniskalou/sqlite-migrate/internal/sqltest"
@@ -74,16 +75,25 @@ drop table posts;
 `,
 }
 
-func writeTestMigrations(t *testing.T, root string) {
-	for name, content := range testMigrations {
-		sqltest.WriteMigration(t, root, name, content)
-	}
+func newDefaultFS() fstest.MapFS {
+	return sqltest.NewFS(testMigrations)
 }
 
-func newTestCommandContext(rootDir string) commandContext {
+// FIXME: duplication with migrate_test.go
+func newFS(overrides map[string]string) fstest.MapFS {
+	fsys := newDefaultFS()
+	for name, content := range overrides {
+		fsys[name] = &fstest.MapFile{
+			Data: []byte(content),
+		}
+	}
+	return fsys
+}
+
+func newTestCommandContext(fsys fstest.MapFS) commandContext {
 	return commandContext{
 		renderer: newRenderer(true),
-		migrator: migrate.New(rootDir, nil),
+		migrator: migrate.New(fsys, nil),
 	}
 }
 
@@ -328,7 +338,8 @@ func TestCmdInitCreatesMigrationFiles(t *testing.T) {
 	t.Parallel()
 
 	rootDir := filepath.Join(t.TempDir(), "sql")
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
+	ctx.rootDir = rootDir
 
 	captureStdout(t, func() {
 		if err := cmdInit(ctx); err != nil {
@@ -379,7 +390,8 @@ func TestCmdInitDoesNotOverwriteExistingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
+	ctx.rootDir = rootDir
 
 	captureStdout(t, func() {
 		if err := cmdInit(ctx); err != nil {
@@ -421,7 +433,8 @@ func TestCmdInitCreatesMissingFileWithoutOverwritingExistingOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
+	ctx.rootDir = rootDir
 
 	captureStdout(t, func() {
 		if err := cmdInit(ctx); err != nil {
@@ -446,15 +459,14 @@ func TestCmdInitCreatesMissingFileWithoutOverwritingExistingOne(t *testing.T) {
 func TestCmdInitReturnsErrorWhenDirectoryCannotBeCreated(t *testing.T) {
 	t.Parallel()
 
-	baseDir := t.TempDir()
-	blocker := filepath.Join(baseDir, "file")
+	blocker := filepath.Join(t.TempDir(), "file")
 
 	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	rootDir := filepath.Join(blocker, "sql")
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
+	ctx.rootDir = blocker
 
 	captureStdout(t, func() {
 		if err := cmdInit(ctx); err == nil {
@@ -467,7 +479,7 @@ func TestCmdStatusDatabaseOpenError(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "missing.db")
-	ctx := newTestCommandContext(t.TempDir())
+	ctx := newTestCommandContext(newDefaultFS())
 
 	err := cmdStatus(ctx, path)
 	if err == nil {
@@ -482,9 +494,7 @@ func TestCmdStatusDatabaseOpenError(t *testing.T) {
 func TestCmdStatusEmptyDatabase(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-
 	db, err := connectDB(dbPath, false)
 	if err != nil {
 		t.Fatal(err)
@@ -493,7 +503,7 @@ func TestCmdStatusEmptyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
 
 	output := captureStdout(t, func() {
 		if err := cmdStatus(ctx, dbPath); err != nil {
@@ -518,11 +528,7 @@ func TestCmdStatusEmptyDatabase(t *testing.T) {
 func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
-
-	writeTestMigrations(t, rootDir)
-
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	// apply the first migration, leaving the second pending
@@ -565,11 +571,7 @@ Pending migrations:
 func TestCmdDeploy(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
-
-	writeTestMigrations(t, rootDir)
-
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -593,11 +595,7 @@ func TestCmdDeploy(t *testing.T) {
 func TestCmdDeployTarget(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
-
-	writeTestMigrations(t, rootDir)
-
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
 	target := 1
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -629,16 +627,12 @@ func TestCmdDeployTarget(t *testing.T) {
 func TestCmdDeployMigrationError(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
+	fsys := newFS(map[string]string{
+		"001_invalid.up.sql":   `this is not valid sql;`,
+		"001_invalid.down.sql": `select 1`,
+	})
 
-	sqltest.WriteMigration(t, rootDir, "001_invalid.up.sql", `
-			this is not valid sql;
-		`)
-	sqltest.WriteMigration(t, rootDir, "001_invalid.down.sql", `
-			select 1;
-		`)
-
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(fsys)
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	err := cmdDeploy(ctx, dbPath, nil)
@@ -654,11 +648,7 @@ func TestCmdDeployMigrationError(t *testing.T) {
 func TestCmdRollback(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
-
-	writeTestMigrations(t, rootDir)
-
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -682,11 +672,7 @@ func TestCmdRollback(t *testing.T) {
 func TestCmdRollbackTarget(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
-
-	writeTestMigrations(t, rootDir)
-
-	ctx := newTestCommandContext(rootDir)
+	ctx := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 
@@ -713,7 +699,7 @@ func TestCmdRollbackMissingDatabase(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "missing.db")
-	ctx := newTestCommandContext(t.TempDir())
+	ctx := newTestCommandContext(newDefaultFS())
 
 	err := cmdRollback(ctx, path, 0)
 	if err == nil {
@@ -732,19 +718,15 @@ func TestCmdRollbackMissingDatabase(t *testing.T) {
 func TestCmdRollbackMigrationError(t *testing.T) {
 	t.Parallel()
 
-	rootDir := t.TempDir()
-
-	sqltest.WriteMigration(t, rootDir, "001_create_users.up.sql", `
+	fsys := newFS(map[string]string{
+		"001_create_users.up.sql": `
 			create table users (
 				id integer primary key
 			);
-		`)
-
-	sqltest.WriteMigration(t, rootDir, "001_create_users.down.sql", `
-			THIS IS NOT VALID SQL;
-		`)
-
-	ctx := newTestCommandContext(rootDir)
+		`,
+		"001_create_users.down.sql": "this is not valid sql;",
+	})
+	ctx := newTestCommandContext(fsys)
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
