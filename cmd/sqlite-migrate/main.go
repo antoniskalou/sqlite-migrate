@@ -41,12 +41,11 @@ func newCommandContext(
 	}
 
 	rootDir := cmd.String("root")
-
 	renderer := newRenderer(opts.noColor)
 	migrator := migrate.New(
 		// TODO: verification
 		os.DirFS(rootDir),
-		logEvent(renderer, opts),
+		logEvent(renderer, cmd.Writer, cmd.ErrWriter, opts.verbose),
 	)
 	return commandContext{
 		rootDir:  rootDir,
@@ -156,12 +155,17 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		renderer := newRenderer(cmd.Bool("no-color"))
-		fmt.Printf("%s %v\n", renderer(errorStyle, "[ERR]"), err)
+		fmt.Fprintf(cmd.ErrWriter, "%s %v\n", renderer(errorStyle, "[ERR]"), err)
 		os.Exit(1)
 	}
 }
 
-func logEvent(renderer renderer, options loggerOptions) func(migrate.Event) {
+func logEvent(
+	renderer renderer,
+	stdout io.Writer,
+	stderr io.Writer,
+	verbose bool,
+) func(migrate.Event) {
 	return func(e migrate.Event) {
 		switch e.Kind {
 		case migrate.EventSkip:
@@ -172,7 +176,7 @@ func logEvent(renderer renderer, options loggerOptions) func(migrate.Event) {
 				faintText = "(never applied)"
 			}
 
-			fmt.Printf("%s %s %s\n",
+			fmt.Fprintf(stderr, "%s %s %s\n",
 				renderer(skipStyle, "[SKIP]"),
 				e.File,
 				renderer(faintStyle, faintText),
@@ -184,17 +188,17 @@ func logEvent(renderer renderer, options loggerOptions) func(migrate.Event) {
 			}
 
 			dir := strings.ToUpper(e.Direction.String())
-			fmt.Printf("%s %s → user_version=%s\n",
+			fmt.Fprintf(stderr, "%s %s → user_version=%s\n",
 				renderer(dirStyle, "["+dir+"]"),
 				e.File,
 				renderer(versionStyle, strconv.Itoa(e.Version)),
 			)
 
-			if options.verbose {
-				fmt.Println(renderer(faintStyle, e.SQL))
+			if verbose {
+				fmt.Fprintln(stdout, renderer(faintStyle, e.SQL))
 			}
 		case migrate.EventDone:
-			fmt.Printf("%s user_version=%s\n",
+			fmt.Fprintf(stderr, "%s user_version=%s\n",
 				renderer(doneStyle, "[DONE]"),
 				renderer(versionStyle, strconv.Itoa(e.Version)),
 			)
@@ -280,7 +284,7 @@ func cmdInit(ctx commandContext) error {
 		return fmt.Errorf("failed to resolve migration directory: %w", err)
 	}
 
-	fmt.Printf("%s Migration directory initialized at %s\n",
+	fmt.Fprintf(ctx.stderr, "%s Migration directory initialized at %s\n",
 		ctx.renderer(doneStyle, "[DONE]"),
 		absDir,
 	)
@@ -339,7 +343,7 @@ func cmdStatus(ctx commandContext, path string) error {
 		}
 	}
 
-	fmt.Print(strings.Join(lines, "\n"))
+	fmt.Fprint(ctx.stderr, strings.Join(lines, "\n"))
 
 	return nil
 }
