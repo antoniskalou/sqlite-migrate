@@ -43,6 +43,7 @@ Example:
 import (
   "fmt"
   "log"
+  "os"
 
   "github.com/antoniskalou/sqlite-migrate"
 )
@@ -51,8 +52,7 @@ func main() {
   db := connectToSQLite(...) // *sql.DB
 
   migrator := migrate.Migrator{
-    // defaults to ./sql
-    RootDir: "./my-migration-dir",
+    RootDir: os.DirFS("./my-migration-dir"),
     // optional event handler
     OnEvent: func(event migrate.Event) {
       fmt.Println("received event:", event)
