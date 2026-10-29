@@ -23,7 +23,7 @@ import (
 )
 
 // Version is the current version of the migrate library.
-const Version = "0.0.5"
+const Version = "0.0.6"
 
 type OnEventFunc func(Event)
 
