@@ -19,9 +19,18 @@ import (
 
 const defaultMigrationDir = "sql"
 
-type loggerOptions struct {
+type commandOptions struct {
 	verbose bool
 	noColor bool
+	rootDir string
+}
+
+func newCommandOptions(cmd *cli.Command) commandOptions {
+	return commandOptions{
+		verbose: cmd.Bool("verbose"),
+		noColor: cmd.Bool("no-color"),
+		rootDir: cmd.String("root"),
+	}
 }
 
 type commandContext struct {
@@ -35,20 +44,15 @@ type commandContext struct {
 func newCommandContext(
 	cmd *cli.Command,
 ) commandContext {
-	opts := loggerOptions{
-		verbose: cmd.Bool("verbose"),
-		noColor: cmd.Bool("no-color"),
-	}
-
-	rootDir := cmd.String("root")
+	opts := newCommandOptions(cmd)
 	renderer := newRenderer(opts.noColor)
 	migrator := migrate.New(
 		// TODO: verification
-		os.DirFS(rootDir),
+		os.DirFS(opts.rootDir),
 		logEvent(renderer, cmd.Writer, cmd.ErrWriter, opts.verbose),
 	)
 	return commandContext{
-		rootDir:  rootDir,
+		rootDir:  opts.rootDir,
 		renderer: renderer,
 		migrator: migrator,
 		stdout:   cmd.Writer,

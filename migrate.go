@@ -261,7 +261,7 @@ func setUserVersion(db sqlExecutor, version int) error {
 }
 
 func migrations(fsys fs.FS, direction Direction) ([]string, error) {
-	// os.ReadDir sorts by filename
+	// ReadDir sorts by filename
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, err

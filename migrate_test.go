@@ -102,9 +102,12 @@ func TestDeployToTarget(t *testing.T) {
 }
 
 func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
-	fsys := newFS(map[string]string{
-		migrationT2Up: `invalid sql;`,
-	})
+	fsys := sqltest.MergeFS(
+		newDefaultFS(),
+		map[string]string{
+			migrationT2Up: `invalid sql;`,
+		},
+	)
 	m, db := newTestMigrator(t, fsys, nil)
 
 	got, err := m.DeployAll(db)
@@ -140,9 +143,12 @@ func TestRollbackTargetValidation(t *testing.T) {
 }
 
 func TestMigrationFailureReturnsError(t *testing.T) {
-	fsys := newFS(map[string]string{
-		migrationT1Up: `invalid sql;`,
-	})
+	fsys := sqltest.MergeFS(
+		newDefaultFS(),
+		map[string]string{
+			migrationT1Up: `invalid sql;`,
+		},
+	)
 	m, db := newTestMigrator(t, fsys, nil)
 
 	got, err := m.DeployAll(db)
@@ -160,9 +166,12 @@ func TestMigrationFailureReturnsError(t *testing.T) {
 }
 
 func TestRollbackFailurePreservesVersion(t *testing.T) {
-	fsys := newFS(map[string]string{
-		migrationT2Down: `invalid sql;`,
-	})
+	fsys := sqltest.MergeFS(
+		newDefaultFS(),
+		map[string]string{
+			migrationT2Down: `invalid sql;`,
+		},
+	)
 	m, db := newTestMigrator(t, fsys, nil)
 
 	got, err := m.DeployAll(db)
@@ -293,34 +302,26 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func newDefaultFS() fstest.MapFS {
-	return sqltest.NewFS(map[string]string{
-		migrationT1Up: `
-			create table t1 (
-				id integer primary key autoincrement,
-				data text not null
-			);
-		`,
-		migrationT1Down: `drop table t1;`,
-		migrationT2Up: `
-			create table t2 (
-				id integer primary key autoincrement,
-				data text not null,
-				t1_id integer not null references t1(id)
-			);
-		`,
-		migrationT2Down: `drop table t2;`,
-	})
+var testMigrations = map[string]string{
+	migrationT1Up: `
+		create table t1 (
+			id integer primary key autoincrement,
+			data text not null
+		);
+	`,
+	migrationT1Down: `drop table t1;`,
+	migrationT2Up: `
+		create table t2 (
+			id integer primary key autoincrement,
+			data text not null,
+			t1_id integer not null references t1(id)
+		);
+	`,
+	migrationT2Down: `drop table t2;`,
 }
 
-func newFS(overrides map[string]string) fstest.MapFS {
-	fsys := newDefaultFS()
-	for name, content := range overrides {
-		fsys[name] = &fstest.MapFile{
-			Data: []byte(content),
-		}
-	}
-	return fsys
+func newDefaultFS() fstest.MapFS {
+	return sqltest.NewFS(testMigrations)
 }
 
 func newTestMigrator(t *testing.T, fsys fstest.MapFS, onEvent OnEventFunc) (*Migrator, *sql.DB) {

@@ -539,10 +539,13 @@ func TestCmdDeployTarget(t *testing.T) {
 func TestCmdDeployMigrationError(t *testing.T) {
 	t.Parallel()
 
-	fsys := newFS(map[string]string{
-		"001_invalid.up.sql":   `this is not valid sql;`,
-		"001_invalid.down.sql": `select 1`,
-	})
+	fsys := sqltest.MergeFS(
+		newDefaultFS(),
+		map[string]string{
+			"001_invalid.up.sql":   `this is not valid sql;`,
+			"001_invalid.down.sql": `select 1`,
+		},
+	)
 
 	ctx := newTestCommandContext(fsys)
 
@@ -630,14 +633,17 @@ func TestCmdRollbackMissingDatabase(t *testing.T) {
 func TestCmdRollbackMigrationError(t *testing.T) {
 	t.Parallel()
 
-	fsys := newFS(map[string]string{
-		"001_create_users.up.sql": `
-			create table users (
-				id integer primary key
-			);
-		`,
-		"001_create_users.down.sql": "this is not valid sql;",
-	})
+	fsys := sqltest.MergeFS(
+		newDefaultFS(),
+		map[string]string{
+			"001_create_users.up.sql": `
+				create table users (
+					id integer primary key
+				);
+			`,
+			"001_create_users.down.sql": "this is not valid sql;",
+		},
+	)
 	ctx := newTestCommandContext(fsys)
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -773,17 +779,6 @@ drop table posts;
 
 func newDefaultFS() fstest.MapFS {
 	return sqltest.NewFS(testMigrations)
-}
-
-// FIXME: duplication with migrate_test.go
-func newFS(overrides map[string]string) fstest.MapFS {
-	fsys := newDefaultFS()
-	for name, content := range overrides {
-		fsys[name] = &fstest.MapFile{
-			Data: []byte(content),
-		}
-	}
-	return fsys
 }
 
 func newTestCommandContext(fsys fstest.MapFS) commandContext {
