@@ -15,6 +15,7 @@ package migrate
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -24,6 +25,12 @@ import (
 
 // Version is the current version of the migrate library.
 const Version = "0.0.6"
+
+var (
+	ErrFilesystem = errors.New("migration filesystem error")
+	ErrDatabase   = errors.New("migration database error")
+	ErrSQL        = errors.New("migration SQL error")
+)
 
 type OnEventFunc func(Event)
 
@@ -201,7 +208,7 @@ func applyMigration(
 ) (string, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return "", fmt.Errorf("begin migration %s: %w", path, err)
+		return "", fmt.Errorf("%w: begin migration %q: %w", ErrDatabase, path, err)
 	}
 	defer tx.Rollback()
 
@@ -211,11 +218,11 @@ func applyMigration(
 	}
 
 	if err := setUserVersion(tx, version); err != nil {
-		return sql, fmt.Errorf("update user_version: %w", err)
+		return sql, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return sql, fmt.Errorf("commit migration %s: %w", path, err)
+		return sql, fmt.Errorf("%w: commit migration %s: %w", ErrDatabase, path, err)
 	}
 
 	return sql, nil
@@ -233,13 +240,12 @@ type sqlExecutor interface {
 func runSQLFile(db sqlExecutor, fsys fs.FS, file string) (string, error) {
 	sqlBytes, err := fs.ReadFile(fsys, file)
 	if err != nil {
-		return "", fmt.Errorf("read SQL file %s: %w", file, err)
+		return "", fmt.Errorf("%w: read %q: %w", ErrFilesystem, file, err)
 	}
 
 	sql := string(sqlBytes)
-
 	if _, err := db.Exec(sql); err != nil {
-		return sql, fmt.Errorf("execute SQL file %s: %w", file, err)
+		return sql, fmt.Errorf("%w: execute SQL %q: %w", ErrSQL, file, err)
 	}
 
 	return sql, nil
@@ -249,7 +255,7 @@ func getUserVersion(db *sql.DB) (int, error) {
 	var version int
 	err := db.QueryRow("pragma user_version").Scan(&version)
 	if err != nil {
-		return 0, fmt.Errorf("get user version: %w", err)
+		return 0, fmt.Errorf("%w: get user_version: %w", ErrDatabase, err)
 	}
 	return version, nil
 }
@@ -257,14 +263,17 @@ func getUserVersion(db *sql.DB) (int, error) {
 func setUserVersion(db sqlExecutor, version int) error {
 	// prepared statements don't work for pragma
 	_, err := db.Exec("pragma user_version = " + strconv.Itoa(version))
-	return err
+	if err != nil {
+		return fmt.Errorf("%w: set user_version: %w", ErrDatabase, err)
+	}
+	return nil
 }
 
 func migrations(fsys fs.FS, direction Direction) ([]string, error) {
 	// ReadDir sorts by filename
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: failed to read directory from FS", ErrFilesystem)
 	}
 
 	suffix := direction.String() + ".sql"
