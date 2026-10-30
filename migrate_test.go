@@ -51,14 +51,14 @@ func TestMigrationLifecycle(t *testing.T) {
 				File:      migrationT1Up,
 				Version:   1,
 				Direction: Up,
-				SQL:       string(fsys[migrationT1Up].Data),
+				SQL:       readFSFile(t, &fsys, migrationT1Up),
 			},
 			{
 				Kind:      EventApply,
 				File:      migrationT2Up,
 				Version:   2,
 				Direction: Up,
-				SQL:       string(fsys[migrationT2Up].Data),
+				SQL:       readFSFile(t, &fsys, migrationT2Up),
 			},
 			{
 				Kind:      EventDone,
@@ -84,7 +84,7 @@ func TestMigrationLifecycle(t *testing.T) {
 				File:      migrationT2Down,
 				Version:   1,
 				Direction: Down,
-				SQL:       string(fsys[migrationT2Down].Data),
+				SQL:       readFSFile(t, &fsys, migrationT2Down),
 			},
 			{
 				Kind:      EventDone,
@@ -115,7 +115,7 @@ func TestMigrationLifecycle(t *testing.T) {
 				File:      migrationT2Up,
 				Version:   2,
 				Direction: Up,
-				SQL:       string(fsys[migrationT2Up].Data),
+				SQL:       readFSFile(t, &fsys, migrationT2Up),
 			},
 			{
 				Kind:      EventDone,
@@ -140,14 +140,14 @@ func TestMigrationLifecycle(t *testing.T) {
 				File:      migrationT2Down,
 				Version:   1,
 				Direction: Down,
-				SQL:       string(fsys[migrationT2Down].Data),
+				SQL:       readFSFile(t, &fsys, migrationT2Down),
 			},
 			{
 				Kind:      EventApply,
 				File:      migrationT1Down,
 				Version:   0,
 				Direction: Down,
-				SQL:       string(fsys[migrationT1Down].Data),
+				SQL:       readFSFile(t, &fsys, migrationT1Down),
 			},
 			{
 				Kind:      EventDone,
@@ -475,4 +475,15 @@ func assertEvents(t *testing.T, got, want []Event) {
 	if !slices.Equal(got, want) {
 		t.Errorf("events do not match\ngot: %+v\nwant: %+v", got, want)
 	}
+}
+
+func readFSFile(t testing.TB, fsys *fstest.MapFS, name string) string {
+	t.Helper()
+
+	file, ok := (*fsys)[name]
+	if !ok {
+		t.Fatalf("missing file in FS: %q", name)
+	}
+
+	return string(file.Data)
 }
