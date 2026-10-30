@@ -179,7 +179,13 @@ func (m *Migrator) migrate(
 
 		sql, err := applyMigration(db, m.fsys, path, nextVersion)
 		if err != nil {
-			return version, err
+			return version, fmt.Errorf(
+				"%s migration %q (version %d): %w",
+				direction,
+				path,
+				nextVersion,
+				err,
+			)
 		}
 
 		m.emit(Event{
@@ -245,7 +251,7 @@ func runSQLFile(db sqlExecutor, fsys fs.FS, file string) (string, error) {
 
 	sql := string(sqlBytes)
 	if _, err := db.Exec(sql); err != nil {
-		return sql, fmt.Errorf("%w: execute SQL %q: %w", ErrSQL, file, err)
+		return sql, fmt.Errorf("%w: execute migration %q: %w", ErrSQL, file, err)
 	}
 
 	return sql, nil
@@ -273,7 +279,7 @@ func migrations(fsys fs.FS, direction Direction) ([]string, error) {
 	// ReadDir sorts by filename
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to read directory from FS", ErrFilesystem)
+		return nil, fmt.Errorf("%w: read migration directory: %w", ErrFilesystem, err)
 	}
 
 	suffix := direction.String() + ".sql"

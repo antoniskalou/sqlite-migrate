@@ -20,6 +20,8 @@ const (
 )
 
 func TestMigrationLifecycle(t *testing.T) {
+	t.Parallel()
+
 	m, db := newTestMigrator(t, newDefaultFS(), nil)
 
 	all := []string{migrationT1Up, migrationT2Up}
@@ -79,6 +81,8 @@ func TestMigrationLifecycle(t *testing.T) {
 }
 
 func TestDeploy(t *testing.T) {
+	t.Parallel()
+
 	all := []string{migrationT1Up, migrationT2Up}
 
 	t.Run("deploy to target", func(t *testing.T) {
@@ -168,6 +172,8 @@ func TestDeploy(t *testing.T) {
 }
 
 func TestRollback(t *testing.T) {
+	t.Parallel()
+
 	all := []string{migrationT1Up, migrationT2Up}
 
 	t.Run("invalid rollback target", func(t *testing.T) {
@@ -233,6 +239,8 @@ func TestRollback(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
+	t.Parallel()
+
 	m, db := newTestMigrator(t, newDefaultFS(), nil)
 
 	got, err := m.Version(db)
