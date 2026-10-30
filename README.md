@@ -70,7 +70,7 @@ func main() {
   if err != nil {
     log.Fatal(err)
   }
-  fmt.Println("Deployed to version:", version)
+  fmt.Println("deployed to version:", version)
 }
 ```
 
