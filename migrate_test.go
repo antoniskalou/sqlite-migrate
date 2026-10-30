@@ -2,9 +2,9 @@ package migrate
 
 import (
 	"database/sql"
+	"errors"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -78,189 +78,126 @@ func TestMigrationLifecycle(t *testing.T) {
 	})
 }
 
-func TestDeployToTarget(t *testing.T) {
-	m, db := newTestMigrator(t, newDefaultFS(), nil)
-
-	got, err := m.Deploy(db, 1)
-	assertResult(t, "Deploy(1)", got, 1, err)
-	assertStatus(t, m, db, statusAssertion{
-		version: 1,
-		applied: []string{migrationT1Up},
-		pending: []string{migrationT2Up},
-	})
-	assertTables(t, db, true, false)
-
-	// deploying to the current version does nothing
-	got, err = m.Deploy(db, 1)
-	assertResult(t, "Deploy(1) at current version", got, 1, err)
-	assertStatus(t, m, db, statusAssertion{
-		version: 1,
-		applied: []string{migrationT1Up},
-		pending: []string{migrationT2Up},
-	})
-	assertTables(t, db, true, false)
-}
-
-func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
-	fsys := sqltest.MergeFS(
-		newDefaultFS(),
-		map[string]string{
-			migrationT2Up: `invalid sql;`,
-		},
-	)
-	m, db := newTestMigrator(t, fsys, nil)
-
-	got, err := m.DeployAll(db)
-	assertFailure(t, "Deploy()", got, 1, err)
-
-	assertStatus(t, m, db, statusAssertion{
-		version: 1,
-		applied: []string{migrationT1Up},
-		pending: []string{migrationT2Up},
-	})
-	assertTables(t, db, true, false)
-}
-
-func TestRollbackTargetValidation(t *testing.T) {
-	m, db := newTestMigrator(t, newDefaultFS(), nil)
-
-	got, err := m.DeployAll(db)
-	assertResult(t, "DeployAll()", got, 2, err)
-
-	for _, target := range []int{-1, 3} {
-		name := strconv.Itoa(target)
-		t.Run(name, func(t *testing.T) {
-			got, err := m.Rollback(db, target)
-			assertFailure(t, "Rollback("+name+")", got, 2, err)
-
-			assertStatus(t, m, db, statusAssertion{
-				version: 2,
-				applied: []string{migrationT1Up, migrationT2Up},
-			})
-			assertTables(t, db, true, true)
-		})
-	}
-}
-
-func TestMigrationFailureReturnsError(t *testing.T) {
-	fsys := sqltest.MergeFS(
-		newDefaultFS(),
-		map[string]string{
-			migrationT1Up: `invalid sql;`,
-		},
-	)
-	m, db := newTestMigrator(t, fsys, nil)
-
-	got, err := m.DeployAll(db)
-	assertFailure(t, "DeployAll()", got, 0, err)
-
-	if !strings.Contains(err.Error(), migrationT1Up) {
-		t.Errorf("error %q does not mention migration filename", err)
-	}
-
-	assertStatus(t, m, db, statusAssertion{
-		version: 0,
-		pending: []string{migrationT1Up, migrationT2Up},
-	})
-	assertTables(t, db, false, false)
-}
-
-func TestRollbackFailurePreservesVersion(t *testing.T) {
-	fsys := sqltest.MergeFS(
-		newDefaultFS(),
-		map[string]string{
-			migrationT2Down: `invalid sql;`,
-		},
-	)
-	m, db := newTestMigrator(t, fsys, nil)
-
-	got, err := m.DeployAll(db)
-	assertResult(t, "DeployAll()", got, 2, err)
-
-	got, err = m.Rollback(db, 1)
-	assertFailure(t, "Rollback(1)", got, 2, err)
-
-	assertStatus(t, m, db, statusAssertion{
-		version: 2,
-		applied: []string{migrationT1Up, migrationT2Up},
-	})
-	assertTables(t, db, true, true)
-}
-
-func TestInvalidDeployTarget(t *testing.T) {
-	m, db := newTestMigrator(t, newDefaultFS(), nil)
-
-	for _, target := range []int{-1, 3} {
-		name := strconv.Itoa(target)
-		t.Run(name, func(t *testing.T) {
-			got, err := m.Deploy(db, target)
-			assertFailure(t, "Deploy("+name+")", got, 0, err)
-
-			assertStatus(t, m, db, statusAssertion{
-				version: 0,
-				pending: []string{migrationT1Up, migrationT2Up},
-			})
-			assertTables(t, db, false, false)
-		})
-	}
-}
-
-func TestDeployPreviousTarget(t *testing.T) {
-	m, db := newTestMigrator(t, newDefaultFS(), nil)
-
-	// deploy all first
-	got, err := m.DeployAll(db)
-	assertResult(t, "DeployAll()", got, 2, err)
-
+func TestDeploy(t *testing.T) {
 	all := []string{migrationT1Up, migrationT2Up}
 
-	for _, target := range []int{2, 1} {
-		name := strconv.Itoa(target)
-		t.Run(name, func(t *testing.T) {
-			got, err := m.Deploy(db, target)
-			assertResult(t, "Deploy("+name+")", got, 2, err)
+	t.Run("deploy to target", func(t *testing.T) {
+		m, db := newTestMigrator(t, newDefaultFS(), nil)
 
-			// deploy must not roll back when the target is below the current version
-			assertStatus(t, m, db, statusAssertion{
-				version: 2,
-				applied: all,
-			})
-			assertTables(t, db, true, true)
+		got, err := m.Deploy(db, 1)
+		assertResult(t, "Deploy(1)", got, 1, err)
+		assertStatus(t, m, db, statusAssertion{
+			version: 1,
+			applied: []string{migrationT1Up},
+			pending: []string{migrationT2Up},
 		})
-	}
+		assertTables(t, db, true, false)
+
+		// deploying to the current version does nothing
+		got, err = m.Deploy(db, 1)
+		assertResult(t, "Deploy(1) at current version", got, 1, err)
+		assertStatus(t, m, db, statusAssertion{
+			version: 1,
+			applied: []string{migrationT1Up},
+			pending: []string{migrationT2Up},
+		})
+		assertTables(t, db, true, false)
+	})
+
+	t.Run("invalid deploy target", func(t *testing.T) {
+		m, db := newTestMigrator(t, newDefaultFS(), nil)
+
+		for _, target := range []int{-1, 3} {
+			name := strconv.Itoa(target)
+			t.Run(name, func(t *testing.T) {
+				got, err := m.Deploy(db, target)
+				assertFailure(t, "Deploy("+name+")", got, 0, err)
+
+				assertStatus(t, m, db, statusAssertion{
+					version: 0,
+					pending: all,
+				})
+				assertTables(t, db, false, false)
+			})
+		}
+	})
+
+	t.Run("deploy current and previous target does nothing", func(t *testing.T) {
+		m, db := newTestMigrator(t, newDefaultFS(), nil)
+
+		// deploy all first
+		got, err := m.DeployAll(db)
+		assertResult(t, "DeployAll()", got, 2, err)
+
+		for _, target := range []int{2, 1} {
+			name := strconv.Itoa(target)
+			t.Run(name, func(t *testing.T) {
+				got, err := m.Deploy(db, target)
+				assertResult(t, "Deploy("+name+")", got, 2, err)
+
+				// deploy must not roll back when the target is below the current version
+				assertStatus(t, m, db, statusAssertion{
+					version: 2,
+					applied: all,
+				})
+				assertTables(t, db, true, true)
+			})
+		}
+	})
+
+	t.Run("failed deploy does not advance version", func(t *testing.T) {
+		fsys := sqltest.MergeFS(
+			newDefaultFS(),
+			map[string]string{
+				migrationT2Up: `invalid sql;`,
+			},
+		)
+		m, db := newTestMigrator(t, fsys, nil)
+
+		got, err := m.DeployAll(db)
+		assertFailure(t, "DeployAll()", got, 1, err)
+		assertErrorIs(t, err, ErrSQL)
+
+		assertStatus(t, m, db, statusAssertion{
+			version: 1,
+			applied: []string{migrationT1Up},
+			pending: []string{migrationT2Up},
+		})
+		assertTables(t, db, true, false)
+	})
 }
 
-func TestInvalidRollbackTarget(t *testing.T) {
-	m, db := newTestMigrator(t, newDefaultFS(), nil)
-
-	got, err := m.DeployAll(db)
-	assertResult(t, "DeployAll()", got, 2, err)
-
-	for _, target := range []int{-1, 3} {
-		name := strconv.Itoa(target)
-		t.Run(name, func(t *testing.T) {
-			got, err := m.Rollback(db, target)
-			assertFailure(t, "Rollback("+name+")", got, 2, err)
-
-			assertStatus(t, m, db, statusAssertion{
-				version: 2,
-				applied: []string{migrationT1Up, migrationT2Up},
-			})
-			assertTables(t, db, true, true)
-		})
-	}
-}
-
-func TestPreviousRollbackTarget(t *testing.T) {
-	m, db := newTestMigrator(t, newDefaultFS(), nil)
-
-	got, err := m.DeployAll(db)
-	assertResult(t, "DeployAll()", got, 2, err)
-
+func TestRollback(t *testing.T) {
 	all := []string{migrationT1Up, migrationT2Up}
 
-	t.Run("current version", func(t *testing.T) {
-		got, err := m.Rollback(db, 2)
+	t.Run("invalid rollback target", func(t *testing.T) {
+		m, db := newTestMigrator(t, newDefaultFS(), nil)
+
+		got, err := m.DeployAll(db)
+		assertResult(t, "DeployAll()", got, 2, err)
+
+		for _, target := range []int{-1, 3} {
+			name := strconv.Itoa(target)
+			t.Run(name, func(t *testing.T) {
+				got, err := m.Rollback(db, target)
+				assertFailure(t, "Rollback("+name+")", got, 2, err)
+
+				assertStatus(t, m, db, statusAssertion{
+					version: 2,
+					applied: all,
+				})
+				assertTables(t, db, true, true)
+			})
+		}
+	})
+
+	t.Run("rollback previous target does nothing", func(t *testing.T) {
+		m, db := newTestMigrator(t, newDefaultFS(), nil)
+
+		got, err := m.DeployAll(db)
+		assertResult(t, "DeployAll()", got, 2, err)
+
+		got, err = m.Rollback(db, 2)
 		assertResult(t, "Rollback(2)", got, 2, err)
 
 		// a target at or above the current version must not change the state
@@ -271,16 +208,27 @@ func TestPreviousRollbackTarget(t *testing.T) {
 		assertTables(t, db, true, true)
 	})
 
-	t.Run("previous version", func(t *testing.T) {
-		got, err := m.Rollback(db, 1)
-		assertResult(t, "Rollback(1)", got, 1, err)
+	t.Run("failed rollback does not advance version", func(t *testing.T) {
+		fsys := sqltest.MergeFS(
+			newDefaultFS(),
+			map[string]string{
+				migrationT2Down: `invalid sql;`,
+			},
+		)
+		m, db := newTestMigrator(t, fsys, nil)
+
+		got, err := m.DeployAll(db)
+		assertResult(t, "DeployAll()", got, 2, err)
+
+		got, err = m.Rollback(db, 1)
+		assertFailure(t, "Rollback(1)", got, 2, err)
+		assertErrorIs(t, err, ErrSQL)
 
 		assertStatus(t, m, db, statusAssertion{
-			version: 1,
-			applied: []string{migrationT1Up},
-			pending: []string{migrationT2Up},
+			version: 2,
+			applied: all,
 		})
-		assertTables(t, db, true, false)
+		assertTables(t, db, true, true)
 	})
 }
 
@@ -362,6 +310,12 @@ func assertFailure(t *testing.T, operation string, got, want int, err error) {
 	}
 	if got != want {
 		t.Errorf("%s result = %d, want %d", operation, got, want)
+	}
+}
+
+func assertErrorIs(t *testing.T, got, want error) {
+	if !errors.Is(got, want) {
+		t.Errorf("expected %v, got %v", got, want)
 	}
 }
 
