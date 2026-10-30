@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -17,11 +18,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const defaultMigrationDir = "sql"
+const defaultMigrationDir = "./sql"
 
 type commandOptions struct {
 	verbose bool
 	noColor bool
+	json    bool
 	rootDir string
 }
 
@@ -29,6 +31,7 @@ func newCommandOptions(cmd *cli.Command) commandOptions {
 	return commandOptions{
 		verbose: cmd.Bool("verbose"),
 		noColor: cmd.Bool("no-color"),
+		json:    cmd.Bool("json"),
 		rootDir: cmd.String("root"),
 	}
 }
@@ -45,12 +48,17 @@ func newCommandContext(
 	cmd *cli.Command,
 ) commandContext {
 	opts := newCommandOptions(cmd)
+
+	stdout := cmd.Writer
+	stderr := cmd.ErrWriter
+
 	renderer := newRenderer(opts.noColor)
-	migrator := migrate.New(
-		// TODO: verification
-		os.DirFS(opts.rootDir),
-		logEvent(renderer, cmd.Writer, cmd.ErrWriter, opts.verbose),
-	)
+	logger := prettyLogger(renderer, stdout, stderr, opts.verbose)
+	if opts.json {
+		logger = jsonLogger(stdout)
+	}
+
+	migrator := migrate.New(os.DirFS(opts.rootDir), logger)
 	return commandContext{
 		rootDir:  opts.rootDir,
 		renderer: renderer,
@@ -91,6 +99,10 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Name:    "no-color",
 				Usage:   "disable coloured output",
 				Sources: cli.EnvVars("NO_COLOR"),
+			},
+			&cli.BoolFlag{
+				Name:  "json",
+				Usage: "output all events as JSON",
 			},
 			&cli.StringFlag{
 				Name:  "root",
@@ -164,7 +176,17 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 	}
 }
 
-func logEvent(
+func jsonLogger(stdout io.Writer) func(migrate.Event) {
+	return func(e migrate.Event) {
+		err := json.NewEncoder(stdout).Encode(e)
+		if err != nil {
+			// really really shouldn't happen, likely a programmer error
+			panic(err)
+		}
+	}
+}
+
+func prettyLogger(
 	renderer renderer,
 	stdout io.Writer,
 	stderr io.Writer,
