@@ -240,13 +240,14 @@ func TestDeploy(t *testing.T) {
 	})
 
 	t.Run("failed deploy does not advance version", func(t *testing.T) {
+		spy := &eventSpy{}
 		fsys := sqltest.MergeFS(
 			newDefaultFS(),
 			map[string]string{
 				migrationT2Up: `invalid sql;`,
 			},
 		)
-		m, db := newTestMigrator(t, fsys, nil)
+		m, db := newTestMigrator(t, fsys, spy.OnEvent)
 
 		got, err := m.DeployAll(db)
 		assertFailure(t, "DeployAll()", got, 1, err)
@@ -258,6 +259,15 @@ func TestDeploy(t *testing.T) {
 			pending: []string{migrationT2Up},
 		})
 		assertTables(t, db, true, false)
+		assertEvents(t, spy.Drain(), []Event{
+			{
+				Kind:      EventApply,
+				File:      migrationT1Up,
+				Version:   1,
+				Direction: Up,
+				SQL:       readFSFile(t, &fsys, migrationT1Up),
+			},
+		})
 	})
 }
 
@@ -305,16 +315,18 @@ func TestRollback(t *testing.T) {
 	})
 
 	t.Run("failed rollback does not advance version", func(t *testing.T) {
+		spy := &eventSpy{}
 		fsys := sqltest.MergeFS(
 			newDefaultFS(),
 			map[string]string{
 				migrationT2Down: `invalid sql;`,
 			},
 		)
-		m, db := newTestMigrator(t, fsys, nil)
+		m, db := newTestMigrator(t, fsys, spy.OnEvent)
 
 		got, err := m.DeployAll(db)
 		assertResult(t, "DeployAll()", got, 2, err)
+		spy.Drain()
 
 		got, err = m.Rollback(db, 1)
 		assertFailure(t, "Rollback(1)", got, 2, err)
@@ -325,6 +337,7 @@ func TestRollback(t *testing.T) {
 			applied: all,
 		})
 		assertTables(t, db, true, true)
+		assertEvents(t, spy.Drain(), []Event{})
 	})
 }
 
