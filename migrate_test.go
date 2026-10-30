@@ -22,7 +22,9 @@ const (
 func TestMigrationLifecycle(t *testing.T) {
 	t.Parallel()
 
-	m, db := newTestMigrator(t, newDefaultFS(), nil)
+	spy := &eventSpy{}
+	fsys := newDefaultFS()
+	m, db := newTestMigrator(t, fsys, spy.OnEvent)
 
 	all := []string{migrationT1Up, migrationT2Up}
 
@@ -43,6 +45,27 @@ func TestMigrationLifecycle(t *testing.T) {
 			applied: all,
 		})
 		assertTables(t, db, true, true)
+		assertEvents(t, spy.Drain(), []Event{
+			{
+				Kind:      EventApply,
+				File:      migrationT1Up,
+				Version:   1,
+				Direction: Up,
+				SQL:       string(fsys[migrationT1Up].Data),
+			},
+			{
+				Kind:      EventApply,
+				File:      migrationT2Up,
+				Version:   2,
+				Direction: Up,
+				SQL:       string(fsys[migrationT2Up].Data),
+			},
+			{
+				Kind:      EventDone,
+				Version:   2,
+				Direction: Up,
+			},
+		})
 	})
 
 	t.Run("rollback one", func(t *testing.T) {
@@ -55,6 +78,20 @@ func TestMigrationLifecycle(t *testing.T) {
 			pending: []string{migrationT2Up},
 		})
 		assertTables(t, db, true, false)
+		assertEvents(t, spy.Drain(), []Event{
+			{
+				Kind:      EventApply,
+				File:      migrationT2Down,
+				Version:   1,
+				Direction: Down,
+				SQL:       string(fsys[migrationT2Down].Data),
+			},
+			{
+				Kind:      EventDone,
+				Version:   1,
+				Direction: Down,
+			},
+		})
 	})
 
 	t.Run("redeploy", func(t *testing.T) {
@@ -66,6 +103,26 @@ func TestMigrationLifecycle(t *testing.T) {
 			applied: all,
 		})
 		assertTables(t, db, true, true)
+		assertEvents(t, spy.Drain(), []Event{
+			{
+				Kind:      EventSkip,
+				File:      migrationT1Up,
+				Version:   1,
+				Direction: Up,
+			},
+			{
+				Kind:      EventApply,
+				File:      migrationT2Up,
+				Version:   2,
+				Direction: Up,
+				SQL:       string(fsys[migrationT2Up].Data),
+			},
+			{
+				Kind:      EventDone,
+				Version:   2,
+				Direction: Up,
+			},
+		})
 	})
 
 	t.Run("rollback all", func(t *testing.T) {
@@ -77,6 +134,39 @@ func TestMigrationLifecycle(t *testing.T) {
 			pending: all,
 		})
 		assertTables(t, db, false, false)
+		assertEvents(t, spy.Drain(), []Event{
+			{
+				Kind:      EventApply,
+				File:      migrationT2Down,
+				Version:   1,
+				Direction: Down,
+				SQL:       string(fsys[migrationT2Down].Data),
+			},
+			{
+				Kind:      EventApply,
+				File:      migrationT1Down,
+				Version:   0,
+				Direction: Down,
+				SQL:       string(fsys[migrationT1Down].Data),
+			},
+			{
+				Kind:      EventDone,
+				Version:   0,
+				Direction: Down,
+			},
+		})
+	})
+
+	t.Run("rollback all again", func(t *testing.T) {
+		got, err := m.Rollback(db, 0)
+		assertResult(t, "Rollback(0)", got, 0, err)
+		assertEvents(t, spy.Drain(), []Event{
+			{
+				Kind:      EventDone,
+				Version:   0,
+				Direction: Down,
+			},
+		})
 	})
 }
 
@@ -364,4 +454,25 @@ func assertTables(t *testing.T, db *sql.DB, t1, t2 bool) {
 
 	sqltest.AssertTableExists(t, db, "t1", t1)
 	sqltest.AssertTableExists(t, db, "t2", t2)
+}
+
+type eventSpy struct {
+	events []Event
+}
+
+func (s *eventSpy) OnEvent(e Event) {
+	s.events = append(s.events, e)
+}
+
+func (s *eventSpy) Drain() []Event {
+	events := s.events
+	s.events = nil
+	return events
+}
+
+func assertEvents(t *testing.T, got, want []Event) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("events do not match\ngot: %+v\nwant: %+v", got, want)
+	}
 }

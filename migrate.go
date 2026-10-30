@@ -177,6 +177,7 @@ func (m *Migrator) migrate(
 				Kind:      EventSkip,
 				File:      path,
 				Direction: direction,
+				Version:   version,
 			})
 			continue
 		}
@@ -206,8 +207,9 @@ func (m *Migrator) migrate(
 	}
 
 	m.emit(Event{
-		Kind:    EventDone,
-		Version: version,
+		Kind:      EventDone,
+		Version:   version,
+		Direction: direction,
 	})
 	return version, nil
 }
