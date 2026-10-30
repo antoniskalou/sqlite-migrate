@@ -26,10 +26,16 @@ import (
 // Version is the current version of the migrate library.
 const Version = "0.0.6"
 
+// Sentinel errors returned by the migrate package.
 var (
+	// ErrFilesystem indicates an error accessing migration files.
 	ErrFilesystem = errors.New("migration filesystem error")
-	ErrDatabase   = errors.New("migration database error")
-	ErrSQL        = errors.New("migration SQL error")
+
+	// ErrDatabase indicates an error performing a database operation.
+	ErrDatabase = errors.New("migration database error")
+
+	// ErrSQL indicates an error executing a migration's SQL statements.
+	ErrSQL = errors.New("migration SQL error")
 )
 
 type OnEventFunc func(Event)
