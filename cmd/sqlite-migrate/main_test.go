@@ -418,7 +418,7 @@ func TestCmdStatusEmptyDatabase(t *testing.T) {
 	}
 
 	if len(logger.events) != 1 {
-		t.Errorf("expected 1 logger event, got %d", len(logger.events))
+		t.Fatalf("expected 1 logger event, got %d", len(logger.events))
 	}
 
 	got := logger.events[0].Kind
@@ -453,7 +453,7 @@ func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 	}
 
 	if len(logger.events) != 1 {
-		t.Errorf("expected 1 logger event, got %d", len(logger.events))
+		t.Fatalf("expected 1 logger event, got %d", len(logger.events))
 	}
 
 	got := logger.events[0].Kind
@@ -672,7 +672,7 @@ type dummyLogger struct {
 	events []event
 }
 
-func (l *dummyLogger) ToLogger() logger {
+func (l *dummyLogger) logger() logger {
 	return func(e event) {
 		l.events = append(l.events, e)
 	}
@@ -682,6 +682,6 @@ func newTestCommandContext(fsys fstest.MapFS) (commandContext, *dummyLogger) {
 	logger := &dummyLogger{}
 	return commandContext{
 		migrator: migrate.New(fsys, nil),
-		logger:   logger.ToLogger(),
+		logger:   logger.logger(),
 	}, logger
 }

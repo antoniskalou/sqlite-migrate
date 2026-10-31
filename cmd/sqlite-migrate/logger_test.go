@@ -156,9 +156,24 @@ func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 func TestJSONLogger(t *testing.T) {
 	t.Parallel()
 
+	expectedStatus := migrate.MigrationStatus{
+		Version: 1,
+		Applied: []string{"001_create_users.up.sql"},
+		Pending: []string{"001_create_posts.up.sql"},
+	}
+
+	expectedMigration := migrate.Event{
+		Kind:      migrate.EventApply,
+		File:      "001_create_users.up.sql",
+		Direction: migrate.Up,
+		Version:   1,
+		SQL:       "create table users (id integer);",
+	}
+
 	tests := []struct {
 		name  string
 		event event
+		want  any
 	}{
 		{
 			name: "init",
@@ -166,76 +181,29 @@ func TestJSONLogger(t *testing.T) {
 				Kind: eventInit,
 				Path: "/some/file/path",
 			},
+			want: struct {
+				Kind eventKind
+				Path string
+			}{eventInit, "/some/file/path"},
 		},
 		{
 			name: "status",
 			event: event{
-				Kind: eventStatus,
-				Status: migrate.MigrationStatus{
-					Version: 1,
-					Applied: []string{"001_create_users.up.sql"},
-					Pending: []string{"001_create_posts.up.sql"},
-				},
+				Kind:   eventStatus,
+				Status: expectedStatus,
 			},
+			want: struct {
+				Kind   eventKind
+				Status migrate.MigrationStatus
+			}{eventStatus, expectedStatus},
 		},
 		{
-			name: "skip",
+			name: "migration",
 			event: event{
-				Kind: eventMigration,
-				Migration: migrate.Event{
-					Kind:      migrate.EventSkip,
-					File:      "001_create_users.up.sql",
-					Direction: migrate.Up,
-				},
+				Kind:      eventMigration,
+				Migration: expectedMigration,
 			},
-		},
-		{
-			name: "apply up",
-			event: event{
-				Kind: eventMigration,
-				Migration: migrate.Event{
-					Kind:      migrate.EventApply,
-					File:      "001_create_users.up.sql",
-					Direction: migrate.Up,
-					Version:   1,
-				},
-			},
-		},
-		{
-			name: "apply down",
-			event: event{
-				Kind: eventMigration,
-				Migration: migrate.Event{
-					Kind:      migrate.EventApply,
-					File:      "001_create_users.down.sql",
-					Direction: migrate.Down,
-					Version:   1,
-				},
-			},
-		},
-		{
-			name: "SQL shown when verbose",
-			event: event{
-				Kind: eventMigration,
-				Migration: migrate.Event{
-					Kind:      migrate.EventApply,
-					File:      "001_create_users.up.sql",
-					Direction: migrate.Up,
-					Version:   1,
-					SQL:       "create table users (id integer);",
-				},
-			},
-		},
-		{
-			name: "done",
-			event: event{
-				Kind: eventMigration,
-				Migration: migrate.Event{
-					Kind:      migrate.EventDone,
-					Version:   2,
-					Direction: migrate.Up,
-				},
-			},
+			want: expectedMigration,
 		},
 	}
 
@@ -245,7 +213,10 @@ func TestJSONLogger(t *testing.T) {
 			jsonLogger(stdout)(tt.event)
 
 			want := &bytes.Buffer{}
-			json.NewEncoder(want).Encode(tt.event)
+			if err := json.NewEncoder(want).Encode(tt.want); err != nil {
+				t.Fatal(err)
+			}
+
 			assertOutput(t, tt.name, stdout, want.String())
 		})
 	}

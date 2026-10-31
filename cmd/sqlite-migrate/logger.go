@@ -34,10 +34,14 @@ func (e event) MarshalJSON() ([]byte, error) {
 	switch e.Kind {
 	case eventInit:
 		return json.Marshal(struct {
+			Kind eventKind
 			Path string
-		}{e.Path})
+		}{e.Kind, e.Path})
 	case eventStatus:
-		return json.Marshal(e.Status)
+		return json.Marshal(struct {
+			Kind   eventKind
+			Status migrate.MigrationStatus
+		}{eventStatus, e.Status})
 	case eventMigration:
 		return json.Marshal(e.Migration)
 	default:
