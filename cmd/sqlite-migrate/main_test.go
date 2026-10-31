@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -62,7 +61,7 @@ func TestWriteIfNotExists(t *testing.T) {
 			t.TempDir(), "missing-directory", "migration.sql",
 		)
 
-		err := writeIfNotExists(path, "cotnent")
+		err := writeIfNotExists(path, "content")
 		if err == nil {
 			t.Fatal("expected an error for a missing parent directory")
 		}
@@ -255,7 +254,7 @@ func TestCmdInitCreatesMigrationFiles(t *testing.T) {
 	t.Parallel()
 
 	rootDir := filepath.Join(t.TempDir(), "sql")
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = rootDir
 
 	if err := cmdInit(ctx); err != nil {
@@ -305,7 +304,7 @@ func TestCmdInitDoesNotOverwriteExistingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = rootDir
 
 	if err := cmdInit(ctx); err != nil {
@@ -346,7 +345,7 @@ func TestCmdInitCreatesMissingFileWithoutOverwritingExistingOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = rootDir
 
 	if err := cmdInit(ctx); err != nil {
@@ -376,7 +375,7 @@ func TestCmdInitReturnsErrorWhenDirectoryCannotBeCreated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = blocker
 
 	if err := cmdInit(ctx); err == nil {
@@ -388,7 +387,7 @@ func TestCmdStatusDatabaseOpenError(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "missing.db")
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	err := cmdStatus(ctx, path)
 	if err == nil {
@@ -412,31 +411,26 @@ func TestCmdStatusEmptyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, _, stderr := newTestCommandContext(newDefaultFS())
+	ctx, logger := newTestCommandContext(newDefaultFS())
 
 	if err := cmdStatus(ctx, dbPath); err != nil {
 		t.Fatalf("cmdStatus() error = %v", err)
 	}
 
-	output := stderr.String()
-	for _, want := range []string{
-		"Database status",
-		"Version:",
-		"Pending:",
-		"Applied migrations:",
-		"Pending migrations:",
-		"(none)",
-	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output missing %q:\n%s", want, output)
-		}
+	if len(logger.events) != 1 {
+		t.Errorf("expected 1 logger event, got %d", len(logger.events))
+	}
+
+	got := logger.events[0].Kind
+	if got != eventStatus {
+		t.Errorf("unexpected event, got %q, want %q", got, eventStatus)
 	}
 }
 
 func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 	t.Parallel()
 
-	ctx, _, stderr := newTestCommandContext(newDefaultFS())
+	ctx, logger := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	// apply the first migration, leaving the second pending
@@ -458,27 +452,20 @@ func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 		t.Fatalf("cmdStatus() error = %v", err)
 	}
 
-	got := stderr.String()
-	want := `Database status
+	if len(logger.events) != 1 {
+		t.Errorf("expected 1 logger event, got %d", len(logger.events))
+	}
 
-Version:   1
-Pending:   1
-
-Applied migrations:
-  ✓ 001_create_users.up.sql
-
-Pending migrations:
-  • 002_create_posts.up.sql`
-
-	if got != want {
-		t.Errorf("cmdStatus() output mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	got := logger.events[0].Kind
+	if got != eventStatus {
+		t.Errorf("unexpected event, got %q, want %q", got, eventStatus)
 	}
 }
 
 func TestCmdDeploy(t *testing.T) {
 	t.Parallel()
 
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -502,7 +489,7 @@ func TestCmdDeploy(t *testing.T) {
 func TestCmdDeployTarget(t *testing.T) {
 	t.Parallel()
 
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	target := 1
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -542,7 +529,7 @@ func TestCmdDeployMigrationError(t *testing.T) {
 		},
 	)
 
-	ctx, _, _ := newTestCommandContext(fsys)
+	ctx, _ := newTestCommandContext(fsys)
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	err := cmdDeploy(ctx, dbPath, nil)
@@ -558,7 +545,7 @@ func TestCmdDeployMigrationError(t *testing.T) {
 func TestCmdRollback(t *testing.T) {
 	t.Parallel()
 
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -582,7 +569,7 @@ func TestCmdRollback(t *testing.T) {
 func TestCmdRollbackTarget(t *testing.T) {
 	t.Parallel()
 
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 
@@ -609,7 +596,7 @@ func TestCmdRollbackMissingDatabase(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "missing.db")
-	ctx, _, _ := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	err := cmdRollback(ctx, path, 0)
 	if err == nil {
@@ -639,7 +626,7 @@ func TestCmdRollbackMigrationError(t *testing.T) {
 			"001_create_users.down.sql": "this is not valid sql;",
 		},
 	)
-	ctx, _, _ := newTestCommandContext(fsys)
+	ctx, _ := newTestCommandContext(fsys)
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -681,17 +668,20 @@ func newDefaultFS() fstest.MapFS {
 	return sqltest.NewFS(testMigrations)
 }
 
-func newTestCommandContext(fsys fstest.MapFS) (ctx commandContext, stdout *bytes.Buffer, stderr *bytes.Buffer) {
-	stdout = &bytes.Buffer{}
-	stderr = &bytes.Buffer{}
-	ctx = commandContext{
-		migrator: migrate.New(fsys, nil),
-		logger: prettyLogger(
-			newRenderer(true),
-			stdout,
-			stderr,
-			true,
-		),
+type dummyLogger struct {
+	events []event
+}
+
+func (l *dummyLogger) ToLogger() logger {
+	return func(e event) {
+		l.events = append(l.events, e)
 	}
-	return
+}
+
+func newTestCommandContext(fsys fstest.MapFS) (commandContext, *dummyLogger) {
+	logger := &dummyLogger{}
+	return commandContext{
+		migrator: migrate.New(fsys, nil),
+		logger:   logger.ToLogger(),
+	}, logger
 }

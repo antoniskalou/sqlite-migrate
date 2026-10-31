@@ -43,7 +43,6 @@ func (l logger) toMigrationLogger() migrate.OnEventFunc {
 
 func jsonLogger(stdout io.Writer) logger {
 	encoder := json.NewEncoder(stdout)
-
 	encode := func(enc any) {
 		if err := encoder.Encode(enc); err != nil {
 			// really really shouldn't happen, likely a programmer error
@@ -54,13 +53,13 @@ func jsonLogger(stdout io.Writer) logger {
 	return func(e event) {
 		switch e.Kind {
 		case eventInit:
-			encode(struct {
-				Path string
-			}{e.Path})
+			encode(struct{ Path string }{e.Path})
 		case eventStatus:
 			encode(e.Status)
 		case eventMigration:
 			encode(e.Migration)
+		default:
+			panicUnhandled(string(e.Kind))
 		}
 	}
 }
@@ -79,12 +78,14 @@ func prettyLogger(
 			printStatus(renderer, stderr, e.Status)
 		case eventMigration:
 			printEvent(renderer, stdout, stderr, verbose)(e.Migration)
+		default:
+			panicUnhandled(string(e.Kind))
 		}
 	}
 }
 
 func printInit(renderer renderer, out io.Writer, path string) {
-	fmt.Fprintf(out, "%s Migration directory initialized at %s\n",
+	fmt.Fprintf(out, "%s Migration directory initialised at %s\n",
 		renderer(doneStyle, "[DONE]"),
 		path,
 	)
@@ -166,7 +167,7 @@ func printEvent(
 				renderer(versionStyle, strconv.Itoa(e.Version)),
 			)
 
-			if verbose {
+			if verbose && e.SQL != "" {
 				fmt.Fprintln(stdout, renderer(faintStyle, e.SQL))
 			}
 		case migrate.EventDone:
@@ -175,7 +176,11 @@ func printEvent(
 				renderer(versionStyle, strconv.Itoa(e.Version)),
 			)
 		default:
-			panic(fmt.Sprintf("unhandled event kind: %q", e.Kind))
+			panicUnhandled(string(e.Kind))
 		}
 	}
+}
+
+func panicUnhandled(kind string) {
+	panic(fmt.Sprintf("unhandled event kind: %q", kind))
 }
