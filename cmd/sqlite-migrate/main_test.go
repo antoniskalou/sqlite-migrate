@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -62,7 +61,7 @@ func TestWriteIfNotExists(t *testing.T) {
 			t.TempDir(), "missing-directory", "migration.sql",
 		)
 
-		err := writeIfNotExists(path, "cotnent")
+		err := writeIfNotExists(path, "content")
 		if err == nil {
 			t.Fatal("expected an error for a missing parent directory")
 		}
@@ -255,7 +254,7 @@ func TestCmdInitCreatesMigrationFiles(t *testing.T) {
 	t.Parallel()
 
 	rootDir := filepath.Join(t.TempDir(), "sql")
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = rootDir
 
 	if err := cmdInit(ctx); err != nil {
@@ -305,7 +304,7 @@ func TestCmdInitDoesNotOverwriteExistingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = rootDir
 
 	if err := cmdInit(ctx); err != nil {
@@ -346,7 +345,7 @@ func TestCmdInitCreatesMissingFileWithoutOverwritingExistingOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = rootDir
 
 	if err := cmdInit(ctx); err != nil {
@@ -376,7 +375,7 @@ func TestCmdInitReturnsErrorWhenDirectoryCannotBeCreated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	ctx.rootDir = blocker
 
 	if err := cmdInit(ctx); err == nil {
@@ -388,7 +387,7 @@ func TestCmdStatusDatabaseOpenError(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "missing.db")
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	err := cmdStatus(ctx, path)
 	if err == nil {
@@ -412,36 +411,26 @@ func TestCmdStatusEmptyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := newTestCommandContext(newDefaultFS())
-
-	stderr := &bytes.Buffer{}
-	ctx.stderr = stderr
+	ctx, logger := newTestCommandContext(newDefaultFS())
 
 	if err := cmdStatus(ctx, dbPath); err != nil {
 		t.Fatalf("cmdStatus() error = %v", err)
 	}
 
-	output := stderr.String()
-	for _, want := range []string{
-		"Database status",
-		"Version:",
-		"Pending:",
-		"Applied migrations:",
-		"Pending migrations:",
-		"(none)",
-	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output missing %q:\n%s", want, output)
-		}
+	if len(logger.events) != 1 {
+		t.Fatalf("expected 1 logger event, got %d", len(logger.events))
+	}
+
+	got := logger.events[0].Kind
+	if got != eventStatus {
+		t.Errorf("unexpected event, got %q, want %q", got, eventStatus)
 	}
 }
 
 func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 	t.Parallel()
 
-	ctx := newTestCommandContext(newDefaultFS())
-	stderr := &bytes.Buffer{}
-	ctx.stderr = stderr
+	ctx, logger := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	// apply the first migration, leaving the second pending
@@ -463,27 +452,20 @@ func TestCmdStatusAppliedAndPendingMigrations(t *testing.T) {
 		t.Fatalf("cmdStatus() error = %v", err)
 	}
 
-	got := stderr.String()
-	want := `Database status
+	if len(logger.events) != 1 {
+		t.Fatalf("expected 1 logger event, got %d", len(logger.events))
+	}
 
-Version:   1
-Pending:   1
-
-Applied migrations:
-  ✓ 001_create_users.up.sql
-
-Pending migrations:
-  • 002_create_posts.up.sql`
-
-	if got != want {
-		t.Errorf("cmdStatus() output mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	got := logger.events[0].Kind
+	if got != eventStatus {
+		t.Errorf("unexpected event, got %q, want %q", got, eventStatus)
 	}
 }
 
 func TestCmdDeploy(t *testing.T) {
 	t.Parallel()
 
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -507,7 +489,7 @@ func TestCmdDeploy(t *testing.T) {
 func TestCmdDeployTarget(t *testing.T) {
 	t.Parallel()
 
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 	target := 1
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -547,7 +529,7 @@ func TestCmdDeployMigrationError(t *testing.T) {
 		},
 	)
 
-	ctx := newTestCommandContext(fsys)
+	ctx, _ := newTestCommandContext(fsys)
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	err := cmdDeploy(ctx, dbPath, nil)
@@ -563,7 +545,7 @@ func TestCmdDeployMigrationError(t *testing.T) {
 func TestCmdRollback(t *testing.T) {
 	t.Parallel()
 
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -587,7 +569,7 @@ func TestCmdRollback(t *testing.T) {
 func TestCmdRollbackTarget(t *testing.T) {
 	t.Parallel()
 
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 
@@ -614,7 +596,7 @@ func TestCmdRollbackMissingDatabase(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "missing.db")
-	ctx := newTestCommandContext(newDefaultFS())
+	ctx, _ := newTestCommandContext(newDefaultFS())
 
 	err := cmdRollback(ctx, path, 0)
 	if err == nil {
@@ -644,7 +626,7 @@ func TestCmdRollbackMigrationError(t *testing.T) {
 			"001_create_users.down.sql": "this is not valid sql;",
 		},
 	)
-	ctx := newTestCommandContext(fsys)
+	ctx, _ := newTestCommandContext(fsys)
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	if err := cmdDeploy(ctx, dbPath, nil); err != nil {
@@ -659,101 +641,6 @@ func TestCmdRollbackMigrationError(t *testing.T) {
 	if !strings.Contains(err.Error(), "rollback failed:") {
 		t.Errorf("unexpected error: %v", err)
 	}
-}
-
-func TestLogEvent(t *testing.T) {
-	render := newRenderer(true)
-
-	tests := []struct {
-		name    string
-		event   migrate.Event
-		verbose bool
-		stdout  string
-		stderr  string
-	}{
-		{
-			name: "skip",
-			event: migrate.Event{
-				Kind: migrate.EventSkip,
-				File: "001_create_users.up.sql",
-			},
-			stderr: "[SKIP] 001_create_users.up.sql (already applied)\n",
-		},
-		{
-			name: "apply up",
-			event: migrate.Event{
-				Kind:      migrate.EventApply,
-				File:      "001_create_users.up.sql",
-				Direction: migrate.Up,
-				Version:   1,
-			},
-			stderr: "[UP] 001_create_users.up.sql → user_version=1\n",
-		},
-		{
-			name: "apply down",
-			event: migrate.Event{
-				Kind:      migrate.EventApply,
-				File:      "001_create_users.down.sql",
-				Direction: migrate.Down,
-				Version:   1,
-			},
-			stderr: "[DOWN] 001_create_users.down.sql → user_version=1\n",
-		},
-		{
-			name: "SQL shown when verbose",
-			event: migrate.Event{
-				Kind:      migrate.EventApply,
-				File:      "001_create_users.up.sql",
-				Direction: migrate.Up,
-				Version:   1,
-				SQL:       "create table users (id integer);",
-			},
-			verbose: true,
-			stdout:  "create table users (id integer);\n",
-			stderr:  "[UP] 001_create_users.up.sql → user_version=1\n",
-		},
-		{
-			name: "done",
-			event: migrate.Event{
-				Kind:    migrate.EventDone,
-				Version: 2,
-			},
-			stderr: "[DONE] user_version=2\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stdout := &bytes.Buffer{}
-			stderr := &bytes.Buffer{}
-			logEvent(render, stdout, stderr, true)(tt.event)
-
-			assertOutput(t, "stdout", stdout, tt.stdout)
-			assertOutput(t, "stderr", stderr, tt.stderr)
-		})
-	}
-}
-
-func TestLogEventUnknownKindPanics(t *testing.T) {
-	render := newRenderer(true)
-
-	defer func() {
-		got := recover()
-		if got == nil {
-			t.Fatal("expected logEvent to panic for an unknown event kind")
-		}
-
-		want := `unhandled event kind: "unknown"`
-		if got != want {
-			t.Errorf("panic = %v, want %q", got, want)
-		}
-	}()
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	logEvent(render, stdout, stderr, false)(migrate.Event{
-		Kind: migrate.EventKind("unknown"),
-	})
 }
 
 var testMigrations = map[string]string{
@@ -781,20 +668,20 @@ func newDefaultFS() fstest.MapFS {
 	return sqltest.NewFS(testMigrations)
 }
 
-func newTestCommandContext(fsys fstest.MapFS) commandContext {
-	return commandContext{
-		renderer: newRenderer(true),
-		migrator: migrate.New(fsys, nil),
-		stdout:   &bytes.Buffer{},
-		stderr:   &bytes.Buffer{},
+type dummyLogger struct {
+	events []event
+}
+
+func (l *dummyLogger) logger() logger {
+	return func(e event) {
+		l.events = append(l.events, e)
 	}
 }
 
-func assertOutput(t testing.TB, name string, out *bytes.Buffer, want string) {
-	t.Helper()
-
-	got := out.String()
-	if want != "" && got != want {
-		t.Errorf("logEvent() %s:\ngot: %q\nwant: %q", name, got, want)
-	}
+func newTestCommandContext(fsys fstest.MapFS) (commandContext, *dummyLogger) {
+	logger := &dummyLogger{}
+	return commandContext{
+		migrator: migrate.New(fsys, nil),
+		logger:   logger.logger(),
+	}, logger
 }

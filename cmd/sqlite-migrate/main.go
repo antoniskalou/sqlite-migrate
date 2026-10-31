@@ -4,59 +4,47 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
 	"github.com/urfave/cli/v3"
 	_ "modernc.org/sqlite"
 )
 
-const defaultMigrationDir = "sql"
-
-type commandOptions struct {
-	verbose bool
-	noColor bool
-	rootDir string
-}
-
-func newCommandOptions(cmd *cli.Command) commandOptions {
-	return commandOptions{
-		verbose: cmd.Bool("verbose"),
-		noColor: cmd.Bool("no-color"),
-		rootDir: cmd.String("root"),
-	}
-}
+const defaultMigrationDir = "./sql"
 
 type commandContext struct {
 	rootDir  string
-	renderer renderer
+	logger   logger
 	migrator *migrate.Migrator
-	stdout   io.Writer
-	stderr   io.Writer
 }
 
 func newCommandContext(
 	cmd *cli.Command,
 ) commandContext {
-	opts := newCommandOptions(cmd)
-	renderer := newRenderer(opts.noColor)
-	migrator := migrate.New(
-		// TODO: verification
-		os.DirFS(opts.rootDir),
-		logEvent(renderer, cmd.Writer, cmd.ErrWriter, opts.verbose),
-	)
+	var logger logger
+	if cmd.Bool("json") {
+		logger = jsonLogger(cmd.Writer)
+	} else {
+		logger = prettyLogger(prettyLoggerOptions{
+			stdout:  cmd.Writer,
+			stderr:  cmd.ErrWriter,
+			verbose: cmd.Bool("verbose"),
+			noColor: cmd.Bool("no-color"),
+		})
+	}
+
+	rootDir := cmd.String("root")
 	return commandContext{
-		rootDir:  opts.rootDir,
-		renderer: renderer,
-		migrator: migrator,
-		stdout:   cmd.Writer,
-		stderr:   cmd.ErrWriter,
+		rootDir: rootDir,
+		logger:  logger,
+		migrator: migrate.New(
+			os.DirFS(rootDir),
+			logger.toMigrationLogger(),
+		),
 	}
 }
 
@@ -91,6 +79,10 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Name:    "no-color",
 				Usage:   "disable coloured output",
 				Sources: cli.EnvVars("NO_COLOR"),
+			},
+			&cli.BoolFlag{
+				Name:  "json",
+				Usage: "output all events as JSON",
 			},
 			&cli.StringFlag{
 				Name:  "root",
@@ -161,54 +153,6 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 		renderer := newRenderer(cmd.Bool("no-color"))
 		fmt.Fprintf(cmd.ErrWriter, "%s %v\n", renderer(errorStyle, "[ERR]"), err)
 		os.Exit(1)
-	}
-}
-
-func logEvent(
-	renderer renderer,
-	stdout io.Writer,
-	stderr io.Writer,
-	verbose bool,
-) func(migrate.Event) {
-	return func(e migrate.Event) {
-		switch e.Kind {
-		case migrate.EventSkip:
-			var faintText string
-			if e.Direction == migrate.Up {
-				faintText = "(already applied)"
-			} else {
-				faintText = "(never applied)"
-			}
-
-			fmt.Fprintf(stderr, "%s %s %s\n",
-				renderer(skipStyle, "[SKIP]"),
-				e.File,
-				renderer(faintStyle, faintText),
-			)
-		case migrate.EventApply:
-			dirStyle := upStyle
-			if e.Direction == migrate.Down {
-				dirStyle = downStyle
-			}
-
-			dir := strings.ToUpper(e.Direction.String())
-			fmt.Fprintf(stderr, "%s %s → user_version=%s\n",
-				renderer(dirStyle, "["+dir+"]"),
-				e.File,
-				renderer(versionStyle, strconv.Itoa(e.Version)),
-			)
-
-			if verbose {
-				fmt.Fprintln(stdout, renderer(faintStyle, e.SQL))
-			}
-		case migrate.EventDone:
-			fmt.Fprintf(stderr, "%s user_version=%s\n",
-				renderer(doneStyle, "[DONE]"),
-				renderer(versionStyle, strconv.Itoa(e.Version)),
-			)
-		default:
-			panic(fmt.Sprintf("unhandled event kind: %q", e.Kind))
-		}
 	}
 }
 
@@ -288,10 +232,11 @@ func cmdInit(ctx commandContext) error {
 		return fmt.Errorf("failed to resolve migration directory: %w", err)
 	}
 
-	fmt.Fprintf(ctx.stderr, "%s Migration directory initialized at %s\n",
-		ctx.renderer(doneStyle, "[DONE]"),
-		absDir,
-	)
+	ctx.logger(event{
+		Kind: eventInit,
+		Path: absDir,
+	})
+
 	return nil
 }
 
@@ -307,47 +252,10 @@ func cmdStatus(ctx commandContext, path string) error {
 		return fmt.Errorf("failed to get db status: %w", err)
 	}
 
-	render := ctx.renderer
-
-	applied := status.Applied
-	pending := status.Pending
-
-	lines := []string{
-		render(titleStyle, "Database status"),
-		"",
-		fmt.Sprintf("%-10s %s", "Version:",
-			render(versionStyle, strconv.Itoa(status.Version))),
-		fmt.Sprintf("%-10s %s", "Pending:",
-			render(pendingStyle, strconv.Itoa(len(pending)))),
-		"",
-		render(sectionStyle, "Applied migrations:"),
-	}
-
-	if len(applied) == 0 {
-		lines = append(lines, render(faintStyle, "  (none)"))
-	} else {
-		for _, migration := range applied {
-			lines = append(
-				lines,
-				render(upStyle, "  ✓ ")+filepath.Base(migration),
-			)
-		}
-	}
-
-	lines = append(lines, "", render(sectionStyle, "Pending migrations:"))
-
-	if len(pending) == 0 {
-		lines = append(lines, render(faintStyle, "  (none)"))
-	} else {
-		for _, migration := range pending {
-			lines = append(
-				lines,
-				render(pendingStyle, "  • ")+filepath.Base(migration),
-			)
-		}
-	}
-
-	fmt.Fprint(ctx.stderr, strings.Join(lines, "\n"))
+	ctx.logger(event{
+		Kind:   eventStatus,
+		Status: status,
+	})
 
 	return nil
 }

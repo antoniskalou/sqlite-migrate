@@ -1,11 +1,13 @@
 package migrate
 
+import "fmt"
+
 // Direction specifies whether migrations are being applied or rolled back.
 type Direction uint8
 
 const (
 	// Up applies migrations in ascending version order.
-	Up Direction = iota
+	Up Direction = iota + 1
 
 	// Down rolls back migrations in descending version order.
 	Down
@@ -19,8 +21,15 @@ func (d Direction) String() string {
 	case Down:
 		return "down"
 	default:
-		panic("unreachable")
+		panic(fmt.Sprintf("invalid direction: %d", d))
 	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+//
+// It returns the string representation of the direction.
+func (d Direction) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
 }
 
 func (d Direction) delta() int {
@@ -30,6 +39,6 @@ func (d Direction) delta() int {
 	case Down:
 		return -1
 	default:
-		panic("unreachable")
+		panic(fmt.Sprintf("invalid direction: %d", d))
 	}
 }
