@@ -16,22 +16,6 @@ import (
 
 const defaultMigrationDir = "./sql"
 
-type commandOptions struct {
-	verbose bool
-	noColor bool
-	json    bool
-	rootDir string
-}
-
-func newCommandOptions(cmd *cli.Command) commandOptions {
-	return commandOptions{
-		verbose: cmd.Bool("verbose"),
-		noColor: cmd.Bool("no-color"),
-		json:    cmd.Bool("json"),
-		rootDir: cmd.String("root"),
-	}
-}
-
 type commandContext struct {
 	rootDir  string
 	logger   logger
@@ -41,21 +25,24 @@ type commandContext struct {
 func newCommandContext(
 	cmd *cli.Command,
 ) commandContext {
-	opts := newCommandOptions(cmd)
-
 	var logger logger
-	if opts.json {
+	if cmd.Bool("json") {
 		logger = jsonLogger(cmd.Writer)
 	} else {
-		renderer := newRenderer(opts.noColor)
-		logger = prettyLogger(renderer, cmd.Writer, cmd.ErrWriter, opts.verbose)
+		logger = prettyLogger(prettyLoggerOptions{
+			stdout:  cmd.Writer,
+			stderr:  cmd.ErrWriter,
+			verbose: cmd.Bool("verbose"),
+			noColor: cmd.Bool("no-color"),
+		})
 	}
 
+	rootDir := cmd.String("root")
 	return commandContext{
-		rootDir: opts.rootDir,
+		rootDir: rootDir,
 		logger:  logger,
 		migrator: migrate.New(
-			os.DirFS(opts.rootDir),
+			os.DirFS(rootDir),
 			logger.toMigrationLogger(),
 		),
 	}

@@ -11,7 +11,6 @@ import (
 func TestPrettyLogger(t *testing.T) {
 	t.Parallel()
 
-	render := newRenderer(true)
 	tests := []struct {
 		name    string
 		event   event
@@ -120,7 +119,12 @@ Pending migrations:
 		t.Run(tt.name, func(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
-			prettyLogger(render, stdout, stderr, tt.verbose)(tt.event)
+			prettyLogger(prettyLoggerOptions{
+				stdout:  stdout,
+				stderr:  stderr,
+				verbose: tt.verbose,
+				noColor: true,
+			})(tt.event)
 
 			assertOutput(t, "stdout", stdout, tt.stdout)
 			assertOutput(t, "stderr", stderr, tt.stderr)
@@ -131,14 +135,10 @@ Pending migrations:
 func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 	t.Parallel()
 
-	render := newRenderer(true)
-
 	t.Run("invalid migrate.EventKind", func(t *testing.T) {
 		defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
 
-		stdout := &bytes.Buffer{}
-		stderr := &bytes.Buffer{}
-		prettyLogger(render, stdout, stderr, false).toMigrationLogger()(
+		prettyLogger(prettyLoggerOptions{}).toMigrationLogger()(
 			migrate.Event{
 				Kind: migrate.EventKind("unknown"),
 			},
@@ -147,10 +147,7 @@ func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 
 	t.Run("invalid eventKind", func(t *testing.T) {
 		defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
-
-		stdout := &bytes.Buffer{}
-		stderr := &bytes.Buffer{}
-		prettyLogger(render, stdout, stderr, false)(event{
+		prettyLogger(prettyLoggerOptions{})(event{
 			Kind: eventKind("unknown"),
 		})
 	})
@@ -159,135 +156,99 @@ func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 func TestJSONLogger(t *testing.T) {
 	t.Parallel()
 
-	t.Run("init event", func(t *testing.T) {
-		stdout := &bytes.Buffer{}
-		logger := jsonLogger(stdout)
-
-		event := event{
-			Kind: eventInit,
-			Path: "/some/file/path",
-		}
-		logger(event)
-
-		want := &bytes.Buffer{}
-		json.NewEncoder(want).Encode(struct{ Path string }{event.Path})
-		assertOutput(t, "jsonLogger(init)", stdout, want.String())
-	})
-
-	t.Run("status event", func(t *testing.T) {
-		stdout := &bytes.Buffer{}
-		logger := jsonLogger(stdout)
-
-		event := event{
-			Kind: eventStatus,
-			Status: migrate.MigrationStatus{
-				Version: 1,
-				Applied: []string{"001_create_users.up.sql"},
-				Pending: []string{"002_create_posts.up.sql"},
+	tests := []struct {
+		name  string
+		event event
+	}{
+		{
+			name: "init",
+			event: event{
+				Kind: eventInit,
+				Path: "/some/file/path",
 			},
-		}
-		logger(event)
-
-		want := &bytes.Buffer{}
-		json.NewEncoder(want).Encode(event.Status)
-		assertOutput(t, "jsonLogger(status)", stdout, want.String())
-	})
-
-	t.Run("migration events", func(t *testing.T) {
-		tests := []struct {
-			name  string
-			event event
-		}{
-			{
-				name: "init",
-				event: event{
-					Kind: eventInit,
-					Path: "/some/file/path",
+		},
+		{
+			name: "status",
+			event: event{
+				Kind: eventStatus,
+				Status: migrate.MigrationStatus{
+					Version: 1,
+					Applied: []string{"001_create_users.up.sql"},
+					Pending: []string{"001_create_posts.up.sql"},
 				},
 			},
-			{
-				name: "status",
-				event: event{
-					Kind: eventStatus,
-					Status: migrate.MigrationStatus{
-						Version: 1,
-						Applied: []string{"001_create_users.up.sql"},
-						Pending: []string{"001_create_posts.up.sql"},
-					},
+		},
+		{
+			name: "skip",
+			event: event{
+				Kind: eventMigration,
+				Migration: migrate.Event{
+					Kind:      migrate.EventSkip,
+					File:      "001_create_users.up.sql",
+					Direction: migrate.Up,
 				},
 			},
-			{
-				name: "skip",
-				event: event{
-					Kind: eventMigration,
-					Migration: migrate.Event{
-						Kind:      migrate.EventSkip,
-						File:      "001_create_users.up.sql",
-						Direction: migrate.Up,
-					},
+		},
+		{
+			name: "apply up",
+			event: event{
+				Kind: eventMigration,
+				Migration: migrate.Event{
+					Kind:      migrate.EventApply,
+					File:      "001_create_users.up.sql",
+					Direction: migrate.Up,
+					Version:   1,
 				},
 			},
-			{
-				name: "apply up",
-				event: event{
-					Kind: eventMigration,
-					Migration: migrate.Event{
-						Kind:      migrate.EventApply,
-						File:      "001_create_users.up.sql",
-						Direction: migrate.Up,
-						Version:   1,
-					},
+		},
+		{
+			name: "apply down",
+			event: event{
+				Kind: eventMigration,
+				Migration: migrate.Event{
+					Kind:      migrate.EventApply,
+					File:      "001_create_users.down.sql",
+					Direction: migrate.Down,
+					Version:   1,
 				},
 			},
-			{
-				name: "apply down",
-				event: event{
-					Kind: eventMigration,
-					Migration: migrate.Event{
-						Kind:      migrate.EventApply,
-						File:      "001_create_users.down.sql",
-						Direction: migrate.Down,
-						Version:   1,
-					},
+		},
+		{
+			name: "SQL shown when verbose",
+			event: event{
+				Kind: eventMigration,
+				Migration: migrate.Event{
+					Kind:      migrate.EventApply,
+					File:      "001_create_users.up.sql",
+					Direction: migrate.Up,
+					Version:   1,
+					SQL:       "create table users (id integer);",
 				},
 			},
-			{
-				name: "SQL shown when verbose",
-				event: event{
-					Kind: eventMigration,
-					Migration: migrate.Event{
-						Kind:      migrate.EventApply,
-						File:      "001_create_users.up.sql",
-						Direction: migrate.Up,
-						Version:   1,
-						SQL:       "create table users (id integer);",
-					},
+		},
+		{
+			name: "done",
+			event: event{
+				Kind: eventMigration,
+				Migration: migrate.Event{
+					Kind:      migrate.EventDone,
+					Version:   2,
+					Direction: migrate.Up,
 				},
 			},
-			{
-				name: "done",
-				event: event{
-					Kind: eventMigration,
-					Migration: migrate.Event{
-						Kind:      migrate.EventDone,
-						Version:   2,
-						Direction: migrate.Up,
-					},
-				},
-			},
-		}
+		},
+	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				stdout := &bytes.Buffer{}
-				jsonLogger(stdout)(tt.event)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout := &bytes.Buffer{}
+			jsonLogger(stdout)(tt.event)
 
-				want := &bytes.Buffer{}
-				json.NewEncoder(want).Encode(tt.event)
-				assertOutput(t, tt.name, stdout, want.String())
-			})
-		}
-	})
+			want := &bytes.Buffer{}
+			json.NewEncoder(want).Encode(tt.event)
+			assertOutput(t, tt.name, stdout, want.String())
+		})
+	}
 }
 
 func TestJSONLoggerPanicsOnUnknownEvent(t *testing.T) {

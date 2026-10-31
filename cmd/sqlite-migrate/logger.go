@@ -67,20 +67,24 @@ func jsonLogger(stdout io.Writer) logger {
 	}
 }
 
-func prettyLogger(
-	renderer renderer,
-	stdout io.Writer,
-	stderr io.Writer,
-	verbose bool,
-) logger {
+type prettyLoggerOptions struct {
+	stdout  io.Writer
+	stderr  io.Writer
+	verbose bool
+	noColor bool
+}
+
+func prettyLogger(opts prettyLoggerOptions) logger {
+	renderer := newRenderer(opts.noColor)
+
 	return func(e event) {
 		switch e.Kind {
 		case eventInit:
-			printInit(renderer, stderr, e.Path)
+			printInit(renderer, opts.stderr, e.Path)
 		case eventStatus:
-			printStatus(renderer, stderr, e.Status)
+			printStatus(renderer, opts.stderr, e.Status)
 		case eventMigration:
-			printEvent(renderer, stdout, stderr, verbose)(e.Migration)
+			printEvent(renderer, opts, e.Migration)
 		default:
 			panicUnhandled(string(e.Kind))
 		}
@@ -136,51 +140,44 @@ func printStatus(renderer renderer, out io.Writer, status migrate.MigrationStatu
 	fmt.Fprint(out, strings.Join(lines, "\n"))
 }
 
-func printEvent(
-	renderer renderer,
-	stdout io.Writer,
-	stderr io.Writer,
-	verbose bool,
-) func(migrate.Event) {
-	return func(e migrate.Event) {
-		switch e.Kind {
-		case migrate.EventSkip:
-			var faintText string
-			if e.Direction == migrate.Up {
-				faintText = "(already applied)"
-			} else {
-				faintText = "(never applied)"
-			}
-
-			fmt.Fprintf(stderr, "%s %s %s\n",
-				renderer(skipStyle, "[SKIP]"),
-				e.File,
-				renderer(faintStyle, faintText),
-			)
-		case migrate.EventApply:
-			dirStyle := upStyle
-			if e.Direction == migrate.Down {
-				dirStyle = downStyle
-			}
-
-			dir := strings.ToUpper(e.Direction.String())
-			fmt.Fprintf(stderr, "%s %s → user_version=%s\n",
-				renderer(dirStyle, "["+dir+"]"),
-				e.File,
-				renderer(versionStyle, strconv.Itoa(e.Version)),
-			)
-
-			if verbose && e.SQL != "" {
-				fmt.Fprintln(stdout, renderer(faintStyle, e.SQL))
-			}
-		case migrate.EventDone:
-			fmt.Fprintf(stderr, "%s user_version=%s\n",
-				renderer(doneStyle, "[DONE]"),
-				renderer(versionStyle, strconv.Itoa(e.Version)),
-			)
-		default:
-			panicUnhandled(string(e.Kind))
+func printEvent(renderer renderer, opts prettyLoggerOptions, e migrate.Event) {
+	switch e.Kind {
+	case migrate.EventSkip:
+		var faintText string
+		if e.Direction == migrate.Up {
+			faintText = "(already applied)"
+		} else {
+			faintText = "(never applied)"
 		}
+
+		fmt.Fprintf(opts.stderr, "%s %s %s\n",
+			renderer(skipStyle, "[SKIP]"),
+			e.File,
+			renderer(faintStyle, faintText),
+		)
+	case migrate.EventApply:
+		dirStyle := upStyle
+		if e.Direction == migrate.Down {
+			dirStyle = downStyle
+		}
+
+		dir := strings.ToUpper(e.Direction.String())
+		fmt.Fprintf(opts.stderr, "%s %s → user_version=%s\n",
+			renderer(dirStyle, "["+dir+"]"),
+			e.File,
+			renderer(versionStyle, strconv.Itoa(e.Version)),
+		)
+
+		if opts.verbose && e.SQL != "" {
+			fmt.Fprintln(opts.stdout, renderer(faintStyle, e.SQL))
+		}
+	case migrate.EventDone:
+		fmt.Fprintf(opts.stderr, "%s user_version=%s\n",
+			renderer(doneStyle, "[DONE]"),
+			renderer(versionStyle, strconv.Itoa(e.Version)),
+		)
+	default:
+		panicUnhandled(string(e.Kind))
 	}
 }
 
