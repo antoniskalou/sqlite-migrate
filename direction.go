@@ -5,7 +5,7 @@ type Direction uint8
 
 const (
 	// Up applies migrations in ascending version order.
-	Up Direction = iota
+	Up Direction = iota + 1
 
 	// Down rolls back migrations in descending version order.
 	Down
@@ -21,6 +21,13 @@ func (d Direction) String() string {
 	default:
 		panic("unreachable")
 	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+//
+// It returns the string representation of the direction.
+func (d Direction) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
 }
 
 func (d Direction) delta() int {
