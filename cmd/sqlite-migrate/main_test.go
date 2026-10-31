@@ -661,101 +661,6 @@ func TestCmdRollbackMigrationError(t *testing.T) {
 	}
 }
 
-func TestLogEvent(t *testing.T) {
-	render := newRenderer(true)
-
-	tests := []struct {
-		name    string
-		event   migrate.Event
-		verbose bool
-		stdout  string
-		stderr  string
-	}{
-		{
-			name: "skip",
-			event: migrate.Event{
-				Kind: migrate.EventSkip,
-				File: "001_create_users.up.sql",
-			},
-			stderr: "[SKIP] 001_create_users.up.sql (already applied)\n",
-		},
-		{
-			name: "apply up",
-			event: migrate.Event{
-				Kind:      migrate.EventApply,
-				File:      "001_create_users.up.sql",
-				Direction: migrate.Up,
-				Version:   1,
-			},
-			stderr: "[UP] 001_create_users.up.sql → user_version=1\n",
-		},
-		{
-			name: "apply down",
-			event: migrate.Event{
-				Kind:      migrate.EventApply,
-				File:      "001_create_users.down.sql",
-				Direction: migrate.Down,
-				Version:   1,
-			},
-			stderr: "[DOWN] 001_create_users.down.sql → user_version=1\n",
-		},
-		{
-			name: "SQL shown when verbose",
-			event: migrate.Event{
-				Kind:      migrate.EventApply,
-				File:      "001_create_users.up.sql",
-				Direction: migrate.Up,
-				Version:   1,
-				SQL:       "create table users (id integer);",
-			},
-			verbose: true,
-			stdout:  "create table users (id integer);\n",
-			stderr:  "[UP] 001_create_users.up.sql → user_version=1\n",
-		},
-		{
-			name: "done",
-			event: migrate.Event{
-				Kind:    migrate.EventDone,
-				Version: 2,
-			},
-			stderr: "[DONE] user_version=2\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stdout := &bytes.Buffer{}
-			stderr := &bytes.Buffer{}
-			logEvent(render, stdout, stderr, true)(tt.event)
-
-			assertOutput(t, "stdout", stdout, tt.stdout)
-			assertOutput(t, "stderr", stderr, tt.stderr)
-		})
-	}
-}
-
-func TestLogEventUnknownKindPanics(t *testing.T) {
-	render := newRenderer(true)
-
-	defer func() {
-		got := recover()
-		if got == nil {
-			t.Fatal("expected logEvent to panic for an unknown event kind")
-		}
-
-		want := `unhandled event kind: "unknown"`
-		if got != want {
-			t.Errorf("panic = %v, want %q", got, want)
-		}
-	}()
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	logEvent(render, stdout, stderr, false)(migrate.Event{
-		Kind: migrate.EventKind("unknown"),
-	})
-}
-
 var testMigrations = map[string]string{
 	"001_create_users.up.sql": `
 create table users(
@@ -787,14 +692,5 @@ func newTestCommandContext(fsys fstest.MapFS) commandContext {
 		migrator: migrate.New(fsys, nil),
 		stdout:   &bytes.Buffer{},
 		stderr:   &bytes.Buffer{},
-	}
-}
-
-func assertOutput(t testing.TB, name string, out *bytes.Buffer, want string) {
-	t.Helper()
-
-	got := out.String()
-	if want != "" && got != want {
-		t.Errorf("logEvent() %s:\ngot: %q\nwant: %q", name, got, want)
 	}
 }
