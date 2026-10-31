@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
 	"github.com/urfave/cli/v3"
@@ -270,47 +268,7 @@ func cmdStatus(ctx commandContext, path string) error {
 		return fmt.Errorf("failed to get db status: %w", err)
 	}
 
-	render := ctx.renderer
-
-	applied := status.Applied
-	pending := status.Pending
-
-	lines := []string{
-		render(titleStyle, "Database status"),
-		"",
-		fmt.Sprintf("%-10s %s", "Version:",
-			render(versionStyle, strconv.Itoa(status.Version))),
-		fmt.Sprintf("%-10s %s", "Pending:",
-			render(pendingStyle, strconv.Itoa(len(pending)))),
-		"",
-		render(sectionStyle, "Applied migrations:"),
-	}
-
-	if len(applied) == 0 {
-		lines = append(lines, render(faintStyle, "  (none)"))
-	} else {
-		for _, migration := range applied {
-			lines = append(
-				lines,
-				render(upStyle, "  ✓ ")+filepath.Base(migration),
-			)
-		}
-	}
-
-	lines = append(lines, "", render(sectionStyle, "Pending migrations:"))
-
-	if len(pending) == 0 {
-		lines = append(lines, render(faintStyle, "  (none)"))
-	} else {
-		for _, migration := range pending {
-			lines = append(
-				lines,
-				render(pendingStyle, "  • ")+filepath.Base(migration),
-			)
-		}
-	}
-
-	fmt.Fprint(ctx.stderr, strings.Join(lines, "\n"))
+	printStatus(ctx.renderer, ctx.stderr, status)
 
 	return nil
 }
