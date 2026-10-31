@@ -1,5 +1,7 @@
 package migrate
 
+import "fmt"
+
 // Direction specifies whether migrations are being applied or rolled back.
 type Direction uint8
 
@@ -19,7 +21,7 @@ func (d Direction) String() string {
 	case Down:
 		return "down"
 	default:
-		panic("unreachable")
+		panic(fmt.Sprintf("invalid direction: %d", d))
 	}
 }
 
@@ -37,6 +39,6 @@ func (d Direction) delta() int {
 	case Down:
 		return -1
 	default:
-		panic("unreachable")
+		panic(fmt.Sprintf("invalid direction: %d", d))
 	}
 }

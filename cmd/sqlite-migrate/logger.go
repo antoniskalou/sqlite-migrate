@@ -30,6 +30,22 @@ type event struct {
 	Migration migrate.Event
 }
 
+func (e event) MarshalJSON() ([]byte, error) {
+	switch e.Kind {
+	case eventInit:
+		return json.Marshal(struct {
+			Path string
+		}{e.Path})
+	case eventStatus:
+		return json.Marshal(e.Status)
+	case eventMigration:
+		return json.Marshal(e.Migration)
+	default:
+		panicUnhandled(string(e.Kind))
+		return nil, nil // unreachable
+	}
+}
+
 type logger func(event)
 
 func (l logger) toMigrationLogger() migrate.OnEventFunc {
@@ -43,23 +59,10 @@ func (l logger) toMigrationLogger() migrate.OnEventFunc {
 
 func jsonLogger(stdout io.Writer) logger {
 	encoder := json.NewEncoder(stdout)
-	encode := func(enc any) {
-		if err := encoder.Encode(enc); err != nil {
+	return func(e event) {
+		if err := encoder.Encode(e); err != nil {
 			// really really shouldn't happen, likely a programmer error
 			panic(err)
-		}
-	}
-
-	return func(e event) {
-		switch e.Kind {
-		case eventInit:
-			encode(struct{ Path string }{e.Path})
-		case eventStatus:
-			encode(e.Status)
-		case eventMigration:
-			encode(e.Migration)
-		default:
-			panicUnhandled(string(e.Kind))
 		}
 	}
 }
