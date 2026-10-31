@@ -75,7 +75,7 @@ func TestPrettyLogger(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
-			prettyLogger(render, stdout, stderr, true)(tt.event)
+			prettyLogger(render, stdout, stderr, true).toMigrationLogger()(tt.event)
 
 			assertOutput(t, "stdout", stdout, tt.stdout)
 			assertOutput(t, "stderr", stderr, tt.stderr)
@@ -100,9 +100,11 @@ func TestPrettyLoggerUnknownKindPanics(t *testing.T) {
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	prettyLogger(render, stdout, stderr, false)(migrate.Event{
-		Kind: migrate.EventKind("unknown"),
-	})
+	prettyLogger(render, stdout, stderr, false).toMigrationLogger()(
+		migrate.Event{
+			Kind: migrate.EventKind("unknown"),
+		},
+	)
 }
 
 func TestJSONLogger(t *testing.T) {
@@ -160,7 +162,7 @@ func TestJSONLogger(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout := &bytes.Buffer{}
-			jsonLogger(stdout)(tt.event)
+			jsonLogger(stdout).toMigrationLogger()(tt.event)
 
 			want := &bytes.Buffer{}
 			json.NewEncoder(want).Encode(tt.event)

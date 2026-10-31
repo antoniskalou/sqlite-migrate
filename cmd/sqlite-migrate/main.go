@@ -36,6 +36,7 @@ func newCommandOptions(cmd *cli.Command) commandOptions {
 type commandContext struct {
 	rootDir  string
 	renderer renderer
+	logger   logger
 	migrator *migrate.Migrator
 	stdout   io.Writer
 	stderr   io.Writer
@@ -55,13 +56,16 @@ func newCommandContext(
 		logger = jsonLogger(stdout)
 	}
 
-	migrator := migrate.New(os.DirFS(opts.rootDir), logger)
 	return commandContext{
 		rootDir:  opts.rootDir,
 		renderer: renderer,
-		migrator: migrator,
-		stdout:   cmd.Writer,
-		stderr:   cmd.ErrWriter,
+		logger:   logger,
+		migrator: migrate.New(
+			os.DirFS(opts.rootDir),
+			logger.toMigrationLogger(),
+		),
+		stdout: cmd.Writer,
+		stderr: cmd.ErrWriter,
 	}
 }
 
@@ -249,10 +253,11 @@ func cmdInit(ctx commandContext) error {
 		return fmt.Errorf("failed to resolve migration directory: %w", err)
 	}
 
-	fmt.Fprintf(ctx.stderr, "%s Migration directory initialized at %s\n",
-		ctx.renderer(doneStyle, "[DONE]"),
-		absDir,
-	)
+	ctx.logger(event{
+		Kind: eventInit,
+		Path: absDir,
+	})
+
 	return nil
 }
 
@@ -268,7 +273,10 @@ func cmdStatus(ctx commandContext, path string) error {
 		return fmt.Errorf("failed to get db status: %w", err)
 	}
 
-	printStatus(ctx.renderer, ctx.stderr, status)
+	ctx.logger(event{
+		Kind:   eventStatus,
+		Status: status,
+	})
 
 	return nil
 }
