@@ -682,15 +682,16 @@ func newDefaultFS() fstest.MapFS {
 }
 
 func newTestCommandContext(fsys fstest.MapFS) (ctx commandContext, stdout *bytes.Buffer, stderr *bytes.Buffer) {
-	renderer := newRenderer(true)
 	stdout = &bytes.Buffer{}
 	stderr = &bytes.Buffer{}
 	ctx = commandContext{
-		renderer: renderer,
 		migrator: migrate.New(fsys, nil),
-		stdout:   stdout,
-		stderr:   stderr,
-		logger:   prettyLogger(renderer, stdout, stderr, true),
+		logger: prettyLogger(
+			newRenderer(true),
+			stdout,
+			stderr,
+			true,
+		),
 	}
 	return
 }

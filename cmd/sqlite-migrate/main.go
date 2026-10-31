@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,11 +34,8 @@ func newCommandOptions(cmd *cli.Command) commandOptions {
 
 type commandContext struct {
 	rootDir  string
-	renderer renderer
 	logger   logger
 	migrator *migrate.Migrator
-	stdout   io.Writer
-	stderr   io.Writer
 }
 
 func newCommandContext(
@@ -47,25 +43,21 @@ func newCommandContext(
 ) commandContext {
 	opts := newCommandOptions(cmd)
 
-	stdout := cmd.Writer
-	stderr := cmd.ErrWriter
-
-	renderer := newRenderer(opts.noColor)
-	logger := prettyLogger(renderer, stdout, stderr, opts.verbose)
+	var logger logger
 	if opts.json {
-		logger = jsonLogger(stdout)
+		logger = jsonLogger(cmd.Writer)
+	} else {
+		renderer := newRenderer(opts.noColor)
+		logger = prettyLogger(renderer, cmd.Writer, cmd.ErrWriter, opts.verbose)
 	}
 
 	return commandContext{
-		rootDir:  opts.rootDir,
-		renderer: renderer,
-		logger:   logger,
+		rootDir: opts.rootDir,
+		logger:  logger,
 		migrator: migrate.New(
 			os.DirFS(opts.rootDir),
 			logger.toMigrationLogger(),
 		),
-		stdout: cmd.Writer,
-		stderr: cmd.ErrWriter,
 	}
 }
 
