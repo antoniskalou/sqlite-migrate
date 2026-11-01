@@ -13,9 +13,9 @@ func TestPrettyLogger(t *testing.T) {
 	t.Parallel()
 
 	t.Run("logInit", func(t *testing.T) {
-		stderr := &bytes.Buffer{}
+		stdout := &bytes.Buffer{}
 		logger := newPrettyLogger(
-			io.Discard, stderr,
+			stdout,
 			prettyLoggerOptions{
 				verbose: true,
 				noColor: true,
@@ -24,13 +24,13 @@ func TestPrettyLogger(t *testing.T) {
 		logger.logInit("/some/file/path")
 
 		want := "[DONE] Migration directory initialised at /some/file/path\n"
-		assertOutput(t, "stderr", stderr, want)
+		assertOutput(t, stdout, want)
 	})
 
 	t.Run("logStatus", func(t *testing.T) {
-		stderr := &bytes.Buffer{}
+		stdout := &bytes.Buffer{}
 		logger := newPrettyLogger(
-			io.Discard, stderr,
+			stdout,
 			prettyLoggerOptions{
 				verbose: true,
 				noColor: true,
@@ -53,7 +53,7 @@ Applied migrations:
 Pending migrations:
   • 002_create_posts.up.sql`
 
-		assertOutput(t, "stderr", stderr, want)
+		assertOutput(t, stdout, want)
 	})
 
 	t.Run("logMigration", func(t *testing.T) {
@@ -62,7 +62,6 @@ Pending migrations:
 			event   migrate.Event
 			verbose bool
 			stdout  string
-			stderr  string
 		}{
 			{
 				name: "skip",
@@ -71,7 +70,7 @@ Pending migrations:
 					File:      "001_create_users.up.sql",
 					Direction: migrate.Up,
 				},
-				stderr: "[SKIP] 001_create_users.up.sql (already applied)\n",
+				stdout: "[SKIP] 001_create_users.up.sql (already applied)\n",
 			},
 			{
 				name: "apply up",
@@ -81,7 +80,7 @@ Pending migrations:
 					Direction: migrate.Up,
 					Version:   1,
 				},
-				stderr: "[UP] 001_create_users.up.sql → user_version=1\n",
+				stdout: "[UP] 001_create_users.up.sql → user_version=1\n",
 			},
 			{
 				name: "apply down",
@@ -91,7 +90,7 @@ Pending migrations:
 					Direction: migrate.Down,
 					Version:   1,
 				},
-				stderr: "[DOWN] 001_create_users.down.sql → user_version=1\n",
+				stdout: "[DOWN] 001_create_users.down.sql → user_version=1\n",
 			},
 			{
 				name: "SQL shown when verbose",
@@ -103,8 +102,7 @@ Pending migrations:
 					SQL:       "create table users (id integer);",
 				},
 				verbose: true,
-				stdout:  "create table users (id integer);\n",
-				stderr:  "[UP] 001_create_users.up.sql → user_version=1\n",
+				stdout:  "[UP] 001_create_users.up.sql → user_version=1\ncreate table users (id integer);\n",
 			},
 			{
 				name: "done",
@@ -113,22 +111,20 @@ Pending migrations:
 					Version:   2,
 					Direction: migrate.Up,
 				},
-				stderr: "[DONE] user_version=2\n",
+				stdout: "[DONE] user_version=2\n",
 			},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				stdout := &bytes.Buffer{}
-				stderr := &bytes.Buffer{}
-				logger := newPrettyLogger(stdout, stderr, prettyLoggerOptions{
+				logger := newPrettyLogger(stdout, prettyLoggerOptions{
 					verbose: tt.verbose,
 					noColor: true,
 				})
 				logger.logMigration(tt.event)
 
-				assertOutput(t, "stdout", stdout, tt.stdout)
-				assertOutput(t, "stderr", stderr, tt.stderr)
+				assertOutput(t, stdout, tt.stdout)
 			})
 		}
 	})
@@ -140,7 +136,7 @@ func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 
 	defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
 
-	newPrettyLogger(io.Discard, io.Discard, prettyLoggerOptions{}).logMigration(
+	newPrettyLogger(io.Discard, prettyLoggerOptions{}).logMigration(
 		migrate.Event{
 			Kind: migrate.EventKind("unknown"),
 		},
@@ -159,7 +155,7 @@ func TestJSONLogger(t *testing.T) {
 		if err := json.NewEncoder(want).Encode(init); err != nil {
 			t.Fatal(err)
 		}
-		assertOutput(t, "stdout", stdout, want.String())
+		assertOutput(t, stdout, want.String())
 	})
 
 	t.Run("logStatus", func(t *testing.T) {
@@ -176,7 +172,7 @@ func TestJSONLogger(t *testing.T) {
 		if err := json.NewEncoder(want).Encode(expectedStatus); err != nil {
 			t.Fatal(err)
 		}
-		assertOutput(t, "stdout", stdout, want.String())
+		assertOutput(t, stdout, want.String())
 	})
 
 	t.Run("logMigration", func(t *testing.T) {
@@ -196,7 +192,7 @@ func TestJSONLogger(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		assertOutput(t, "stdout", stdout, want.String())
+		assertOutput(t, stdout, want.String())
 	})
 }
 
@@ -209,11 +205,11 @@ func TestJSONLoggerPanicsOnUnknownMigrationEvent(t *testing.T) {
 	})
 }
 
-func assertOutput(t testing.TB, name string, out *bytes.Buffer, want string) {
+func assertOutput(t testing.TB, out *bytes.Buffer, want string) {
 	t.Helper()
 
 	if got := out.String(); got != want {
-		t.Errorf("%s:\ngot: %q\nwant: %q", name, got, want)
+		t.Errorf("unexpected output:\ngot: %q\nwant: %q", got, want)
 	}
 }
 
