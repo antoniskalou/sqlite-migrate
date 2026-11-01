@@ -11,142 +11,119 @@ import (
 	migrate "github.com/antoniskalou/sqlite-migrate"
 )
 
-type cliEventKind string
-
-const (
-	cliEventInit      cliEventKind = "init"
-	cliEventStatus    cliEventKind = "status"
-	cliEventMigration cliEventKind = "migration"
-)
-
-type cliEvent struct {
-	Kind cliEventKind
-
-	// CLI-specific data
-	Path   string
-	Status migrate.MigrationStatus
-
-	// Migration-specific data
-	Migration migrate.Event
+type logger interface {
+	logInit(path string)
+	logStatus(status migrate.MigrationStatus)
+	logMigration(event migrate.Event)
 }
 
-func (e cliEvent) MarshalJSON() ([]byte, error) {
-	switch e.Kind {
-	case cliEventInit:
-		return json.Marshal(struct {
-			Kind cliEventKind
-			Path string
-		}{e.Kind, e.Path})
-	case cliEventStatus:
-		return json.Marshal(struct {
-			Kind   cliEventKind
-			Status migrate.MigrationStatus
-		}{cliEventStatus, e.Status})
-	case cliEventMigration:
-		return json.Marshal(e.Migration)
+type jsonLogger struct {
+	encoder *json.Encoder
+}
+
+func newJsonLogger(stdout io.Writer) *jsonLogger {
+	return &jsonLogger{
+		encoder: json.NewEncoder(stdout),
+	}
+}
+
+func (l *jsonLogger) logInit(path string) {
+	encodeOrPanic(l.encoder, struct{ Path string }{path})
+}
+
+func (l *jsonLogger) logStatus(status migrate.MigrationStatus) {
+	encodeOrPanic(l.encoder, status)
+}
+
+func (l *jsonLogger) logMigration(event migrate.Event) {
+	switch event.Kind {
+	case migrate.EventApply, migrate.EventSkip, migrate.EventDone:
+		encodeOrPanic(l.encoder, event)
 	default:
-		panicUnhandled(string(e.Kind))
-		return nil, nil // unreachable
+		panicUnhandled(event.Kind)
 	}
 }
 
-type logger func(cliEvent)
-
-func (l logger) toMigrationLogger() migrate.OnEventFunc {
-	return func(e migrate.Event) {
-		l(cliEvent{
-			Kind:      cliEventMigration,
-			Migration: e,
-		})
-	}
-}
-
-func jsonLogger(stdout io.Writer) logger {
-	encoder := json.NewEncoder(stdout)
-	return func(e cliEvent) {
-		if err := encoder.Encode(e); err != nil {
-			// could happen if pipe closes, the filesystem is full, etc.
-			// we choose to panic for simplicity, as propagating the error is annoying
-			// and would require a change in migrate.OnEventFunc
-			panic(err)
-		}
+func encodeOrPanic(enc *json.Encoder, v any) {
+	if err := enc.Encode(v); err != nil {
+		// could happen if pipe closes, the filesystem is full, etc.
+		// we choose to panic for simplicity, as propagating the error is annoying
+		// and would require a change in migrate.OnEventFunc
+		panic(err)
 	}
 }
 
 type prettyLoggerOptions struct {
-	stdout  io.Writer
-	stderr  io.Writer
 	verbose bool
 	noColor bool
 }
 
-func prettyLogger(opts prettyLoggerOptions) logger {
-	renderer := newRenderer(opts.noColor)
+type prettyLogger struct {
+	render renderer
+	stdout io.Writer
+	stderr io.Writer
+	opts   prettyLoggerOptions
+}
 
-	return func(e cliEvent) {
-		switch e.Kind {
-		case cliEventInit:
-			printInit(renderer, opts.stderr, e.Path)
-		case cliEventStatus:
-			printStatus(renderer, opts.stderr, e.Status)
-		case cliEventMigration:
-			printEvent(renderer, opts, e.Migration)
-		default:
-			panicUnhandled(string(e.Kind))
-		}
+func newPrettyLogger(stdout io.Writer, stderr io.Writer, opts prettyLoggerOptions) *prettyLogger {
+	return &prettyLogger{
+		render: newRenderer(opts.noColor),
+		stdout: stdout,
+		stderr: stderr,
+		opts:   opts,
 	}
 }
 
-func printInit(renderer renderer, out io.Writer, path string) {
-	fmt.Fprintf(out, "%s Migration directory initialised at %s\n",
-		renderer(doneStyle, "[DONE]"),
+func (l *prettyLogger) logInit(path string) {
+	fmt.Fprintf(l.stderr, "%s Migration directory initialised at %s\n",
+		l.render(doneStyle, "[DONE]"),
 		path,
 	)
 }
 
-func printStatus(renderer renderer, out io.Writer, status migrate.MigrationStatus) {
+func (l *prettyLogger) logStatus(status migrate.MigrationStatus) {
 	applied := status.Applied
 	pending := status.Pending
 
 	lines := []string{
-		renderer(titleStyle, "Database status"),
+		l.render(titleStyle, "Database status"),
 		"",
 		fmt.Sprintf("%-10s %s", "Version:",
-			renderer(versionStyle, strconv.Itoa(status.Version))),
+			l.render(versionStyle, strconv.Itoa(status.Version))),
 		fmt.Sprintf("%-10s %s", "Pending:",
-			renderer(pendingStyle, strconv.Itoa(len(pending)))),
+			l.render(pendingStyle, strconv.Itoa(len(pending)))),
 		"",
-		renderer(sectionStyle, "Applied migrations:"),
+		l.render(sectionStyle, "Applied migrations:"),
 	}
 
 	if len(applied) == 0 {
-		lines = append(lines, renderer(faintStyle, "  (none)"))
+		lines = append(lines, l.render(faintStyle, "  (none)"))
 	} else {
 		for _, migration := range applied {
 			lines = append(
 				lines,
-				renderer(upStyle, "  ✓ ")+filepath.Base(migration),
+				l.render(upStyle, "  ✓ ")+filepath.Base(migration),
 			)
 		}
 	}
 
-	lines = append(lines, "", renderer(sectionStyle, "Pending migrations:"))
+	lines = append(lines, "", l.render(sectionStyle, "Pending migrations:"))
 
 	if len(pending) == 0 {
-		lines = append(lines, renderer(faintStyle, "  (none)"))
+		lines = append(lines, l.render(faintStyle, "  (none)"))
 	} else {
 		for _, migration := range pending {
 			lines = append(
 				lines,
-				renderer(pendingStyle, "  • ")+filepath.Base(migration),
+				l.render(pendingStyle, "  • ")+filepath.Base(migration),
 			)
 		}
 	}
 
-	fmt.Fprint(out, strings.Join(lines, "\n"))
+	fmt.Fprint(l.stderr, strings.Join(lines, "\n"))
 }
 
-func printEvent(renderer renderer, opts prettyLoggerOptions, e migrate.Event) {
+func (l *prettyLogger) logMigration(e migrate.Event) {
 	switch e.Kind {
 	case migrate.EventSkip:
 		var faintText string
@@ -156,10 +133,10 @@ func printEvent(renderer renderer, opts prettyLoggerOptions, e migrate.Event) {
 			faintText = "(never applied)"
 		}
 
-		fmt.Fprintf(opts.stderr, "%s %s %s\n",
-			renderer(skipStyle, "[SKIP]"),
+		fmt.Fprintf(l.stderr, "%s %s %s\n",
+			l.render(skipStyle, "[SKIP]"),
 			e.File,
-			renderer(faintStyle, faintText),
+			l.render(faintStyle, faintText),
 		)
 	case migrate.EventApply:
 		dirStyle := upStyle
@@ -168,25 +145,25 @@ func printEvent(renderer renderer, opts prettyLoggerOptions, e migrate.Event) {
 		}
 
 		dir := strings.ToUpper(e.Direction.String())
-		fmt.Fprintf(opts.stderr, "%s %s → user_version=%s\n",
-			renderer(dirStyle, "["+dir+"]"),
+		fmt.Fprintf(l.stderr, "%s %s → user_version=%s\n",
+			l.render(dirStyle, "["+dir+"]"),
 			e.File,
-			renderer(versionStyle, strconv.Itoa(e.Version)),
+			l.render(versionStyle, strconv.Itoa(e.Version)),
 		)
 
-		if opts.verbose && e.SQL != "" {
-			fmt.Fprintln(opts.stdout, renderer(faintStyle, e.SQL))
+		if l.opts.verbose && e.SQL != "" {
+			fmt.Fprintln(l.stdout, l.render(faintStyle, e.SQL))
 		}
 	case migrate.EventDone:
-		fmt.Fprintf(opts.stderr, "%s user_version=%s\n",
-			renderer(doneStyle, "[DONE]"),
-			renderer(versionStyle, strconv.Itoa(e.Version)),
+		fmt.Fprintf(l.stderr, "%s user_version=%s\n",
+			l.render(doneStyle, "[DONE]"),
+			l.render(versionStyle, strconv.Itoa(e.Version)),
 		)
 	default:
-		panicUnhandled(string(e.Kind))
+		panicUnhandled(e.Kind)
 	}
 }
 
-func panicUnhandled(kind string) {
+func panicUnhandled(kind migrate.EventKind) {
 	panic(fmt.Sprintf("unhandled event kind: %q", kind))
 }

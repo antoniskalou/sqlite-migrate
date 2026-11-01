@@ -45,6 +45,7 @@ func TestCmdInit(t *testing.T) {
 		}
 
 		assertInitEvent(t, logger, ctx.rootDir)
+		assertEmptyEvents(t, logger) // drained
 	})
 
 	t.Run("does not overwrite existing files", func(t *testing.T) {
@@ -86,6 +87,7 @@ func TestCmdInit(t *testing.T) {
 		}
 
 		assertInitEvent(t, logger, ctx.rootDir)
+		assertEmptyEvents(t, logger) // drained
 	})
 
 	t.Run("creates missing file without overwriting existing one", func(t *testing.T) {
@@ -116,6 +118,7 @@ func TestCmdInit(t *testing.T) {
 		}
 
 		assertInitEvent(t, logger, ctx.rootDir)
+		assertEmptyEvents(t, logger) // drained
 	})
 
 	t.Run("returns error when directory cannot be created", func(t *testing.T) {
@@ -132,7 +135,7 @@ func TestCmdInit(t *testing.T) {
 			t.Fatal("expected cmdInit() to return an error")
 		}
 
-		assertEventCount(t, logger, 0)
+		assertEmptyEvents(t, logger)
 	})
 }
 
@@ -153,7 +156,7 @@ func TestCmdStatus(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 
-		assertEventCount(t, logger, 0)
+		assertEmptyEvents(t, logger)
 	})
 
 	t.Run("with empty database", func(t *testing.T) {
@@ -171,6 +174,7 @@ func TestCmdStatus(t *testing.T) {
 		}
 
 		assertStatusEvent(t, logger, 0, 0, 2)
+		assertEmptyEvents(t, logger) // drained
 	})
 
 	t.Run("with applied and pending migrations", func(t *testing.T) {
@@ -189,12 +193,12 @@ func TestCmdStatus(t *testing.T) {
 		if err := db.Close(); err != nil {
 			t.Fatal(err)
 		}
-
 		if err := cmdStatus(ctx, dbPath); err != nil {
 			t.Fatalf("cmdStatus() error = %v", err)
 		}
 
 		assertStatusEvent(t, logger, 1, 1, 1)
+		assertEmptyEvents(t, logger) // drained
 	})
 }
 
@@ -393,52 +397,74 @@ func newDefaultFS() fstest.MapFS {
 	return sqltest.NewFS(testMigrations)
 }
 
-type dummyLogger struct {
-	events []cliEvent
+type logEvent struct {
+	kind   string
+	path   string
+	status migrate.MigrationStatus
 }
 
-func (l *dummyLogger) logger() logger {
-	return func(e cliEvent) {
-		l.events = append(l.events, e)
-	}
+type spyLogger struct {
+	events []logEvent
 }
 
-func (l *dummyLogger) pop() cliEvent {
-	e := l.events[0]
-	l.events = l.events[1:]
-	return e
+func (l *spyLogger) logInit(path string) {
+	l.events = append(l.events, logEvent{
+		kind: "init",
+		path: path,
+	})
 }
 
-func newTestCommandContext(fsys fstest.MapFS) (commandContext, *dummyLogger) {
-	logger := &dummyLogger{}
+func (l *spyLogger) logStatus(status migrate.MigrationStatus) {
+	l.events = append(l.events, logEvent{
+		kind:   "status",
+		status: status,
+	})
+}
+
+func (l *spyLogger) logMigration(event migrate.Event) {
+	// we're not capturing migration events for these tests, its already checked
+	// by the migrate package tests.
+}
+
+func (l *spyLogger) pop() logEvent {
+	end := len(l.events) - 1
+	event := l.events[end]
+	l.events = l.events[:end]
+	return event
+}
+
+func newTestCommandContext(fsys fstest.MapFS) (commandContext, *spyLogger) {
+	logger := &spyLogger{}
 	return commandContext{
 		migrator: migrate.New(fsys, nil),
-		logger:   logger.logger(),
+		logger:   logger,
 	}, logger
 }
 
-func assertInitEvent(t testing.TB, logger *dummyLogger, path string) {
+func assertInitEvent(t testing.TB, logger *spyLogger, path string) {
 	t.Helper()
 
-	assertEventCount(t, logger, 1)
-
 	event := logger.pop()
-	assertEventKind(t, event, cliEventInit)
 
-	if event.Path != path {
-		t.Errorf("path = %q, want %q", event.Path, path)
+	if event.kind != "init" {
+		t.Fatalf(`expected event kind "init", got %q`, event.kind)
+	}
+
+	if event.path != path {
+		t.Errorf("path = %q, want %q", event.path, path)
 	}
 }
 
-func assertStatusEvent(t testing.TB, logger *dummyLogger, version, applied, pending int) {
+func assertStatusEvent(t testing.TB, logger *spyLogger, version, applied, pending int) {
 	t.Helper()
 
-	assertEventCount(t, logger, 1)
-
 	event := logger.pop()
-	assertEventKind(t, event, cliEventStatus)
 
-	status := event.Status
+	if event.kind != "status" {
+		t.Fatalf(`expected event kind "status", got %q`, event.kind)
+	}
+
+	status := event.status
 	if status.Version != version {
 		t.Errorf("version = %d, want %d", status.Version, version)
 	}
@@ -452,18 +478,10 @@ func assertStatusEvent(t testing.TB, logger *dummyLogger, version, applied, pend
 	}
 }
 
-func assertEventCount(t testing.TB, logger *dummyLogger, count int) {
+func assertEmptyEvents(t testing.TB, logger *spyLogger) {
 	t.Helper()
 
-	if len(logger.events) != count {
-		t.Fatalf("expected %d logger event(s), got %d", count, len(logger.events))
-	}
-}
-
-func assertEventKind(t testing.TB, e cliEvent, kind cliEventKind) {
-	t.Helper()
-
-	if e.Kind != kind {
-		t.Fatalf("unexpected event kind, got %v, want %v", e.Kind, kind)
+	if len(logger.events) != 0 {
+		t.Fatalf("expected empty logger events, got %d", len(logger.events))
 	}
 }
