@@ -27,24 +27,23 @@ func newCommandContext(
 ) commandContext {
 	var logger logger
 	if cmd.Bool("json") {
-		logger = jsonLogger(cmd.Writer)
+		logger = newJsonLogger(cmd.Writer)
 	} else {
-		logger = prettyLogger(prettyLoggerOptions{
-			stdout:  cmd.Writer,
-			stderr:  cmd.ErrWriter,
-			verbose: cmd.Bool("verbose"),
-			noColor: cmd.Bool("no-color"),
-		})
+		logger = newPrettyLogger(
+			cmd.Writer,
+			cmd.ErrWriter,
+			prettyLoggerOptions{
+				verbose: cmd.Bool("verbose"),
+				noColor: cmd.Bool("no-color"),
+			},
+		)
 	}
 
 	rootDir := cmd.String("root")
 	return commandContext{
-		rootDir: rootDir,
-		logger:  logger,
-		migrator: migrate.New(
-			os.DirFS(rootDir),
-			logger.toMigrationLogger(),
-		),
+		rootDir:  rootDir,
+		logger:   logger,
+		migrator: migrate.New(os.DirFS(rootDir), logger.logMigration),
 	}
 }
 
@@ -232,10 +231,7 @@ func cmdInit(ctx commandContext) error {
 		return fmt.Errorf("failed to resolve migration directory: %w", err)
 	}
 
-	ctx.logger(cliEvent{
-		Kind: cliEventInit,
-		Path: absDir,
-	})
+	ctx.logger.logInit(absDir)
 
 	return nil
 }
@@ -252,10 +248,7 @@ func cmdStatus(ctx commandContext, path string) error {
 		return fmt.Errorf("failed to get db status: %w", err)
 	}
 
-	ctx.logger(cliEvent{
-		Kind:   cliEventStatus,
-		Status: status,
-	})
+	ctx.logger.logStatus(status)
 
 	return nil
 }

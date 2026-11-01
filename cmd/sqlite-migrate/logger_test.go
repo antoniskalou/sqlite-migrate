@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"testing"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
@@ -11,32 +12,37 @@ import (
 func TestPrettyLogger(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		event   cliEvent
-		verbose bool
-		stdout  string
-		stderr  string
-	}{
-		{
-			name: "init",
-			event: cliEvent{
-				Kind: cliEventInit,
-				Path: "/some/file/path",
+	t.Run("logInit", func(t *testing.T) {
+		stderr := &bytes.Buffer{}
+		logger := newPrettyLogger(
+			io.Discard, stderr,
+			prettyLoggerOptions{
+				verbose: true,
+				noColor: true,
 			},
-			stderr: "[DONE] Migration directory initialised at /some/file/path\n",
-		},
-		{
-			name: "status",
-			event: cliEvent{
-				Kind: cliEventStatus,
-				Status: migrate.MigrationStatus{
-					Version: 1,
-					Applied: []string{"001_create_users.up.sql"},
-					Pending: []string{"002_create_posts.up.sql"},
-				},
+		)
+		logger.logInit("/some/file/path")
+
+		want := "[DONE] Migration directory initialised at /some/file/path\n"
+		assertOutput(t, "stderr", stderr, want)
+	})
+
+	t.Run("logStatus", func(t *testing.T) {
+		stderr := &bytes.Buffer{}
+		logger := newPrettyLogger(
+			io.Discard, stderr,
+			prettyLoggerOptions{
+				verbose: true,
+				noColor: true,
 			},
-			stderr: `Database status
+		)
+		logger.logStatus(migrate.MigrationStatus{
+			Version: 1,
+			Applied: []string{"001_create_users.up.sql"},
+			Pending: []string{"002_create_posts.up.sql"},
+		})
+
+		want := `Database status
 
 Version:   1
 Pending:   1
@@ -45,189 +51,161 @@ Applied migrations:
   ✓ 001_create_users.up.sql
 
 Pending migrations:
-  • 002_create_posts.up.sql`,
-		},
-		{
-			name: "skip",
-			event: cliEvent{
-				Kind: cliEventMigration,
-				Migration: migrate.Event{
+  • 002_create_posts.up.sql`
+
+		assertOutput(t, "stderr", stderr, want)
+	})
+
+	t.Run("logMigration", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			event   migrate.Event
+			verbose bool
+			stdout  string
+			stderr  string
+		}{
+			{
+				name: "skip",
+				event: migrate.Event{
 					Kind:      migrate.EventSkip,
 					File:      "001_create_users.up.sql",
 					Direction: migrate.Up,
 				},
+				stderr: "[SKIP] 001_create_users.up.sql (already applied)\n",
 			},
-			stderr: "[SKIP] 001_create_users.up.sql (already applied)\n",
-		},
-		{
-			name: "apply up",
-			event: cliEvent{
-				Kind: cliEventMigration,
-				Migration: migrate.Event{
+			{
+				name: "apply up",
+				event: migrate.Event{
 					Kind:      migrate.EventApply,
 					File:      "001_create_users.up.sql",
 					Direction: migrate.Up,
 					Version:   1,
 				},
+				stderr: "[UP] 001_create_users.up.sql → user_version=1\n",
 			},
-			stderr: "[UP] 001_create_users.up.sql → user_version=1\n",
-		},
-		{
-			name: "apply down",
-			event: cliEvent{
-				Kind: cliEventMigration,
-				Migration: migrate.Event{
+			{
+				name: "apply down",
+				event: migrate.Event{
 					Kind:      migrate.EventApply,
 					File:      "001_create_users.down.sql",
 					Direction: migrate.Down,
 					Version:   1,
 				},
+				stderr: "[DOWN] 001_create_users.down.sql → user_version=1\n",
 			},
-			stderr: "[DOWN] 001_create_users.down.sql → user_version=1\n",
-		},
-		{
-			name: "SQL shown when verbose",
-			event: cliEvent{
-				Kind: cliEventMigration,
-				Migration: migrate.Event{
+			{
+				name: "SQL shown when verbose",
+				event: migrate.Event{
 					Kind:      migrate.EventApply,
 					File:      "001_create_users.up.sql",
 					Direction: migrate.Up,
 					Version:   1,
 					SQL:       "create table users (id integer);",
 				},
+				verbose: true,
+				stdout:  "create table users (id integer);\n",
+				stderr:  "[UP] 001_create_users.up.sql → user_version=1\n",
 			},
-			verbose: true,
-			stdout:  "create table users (id integer);\n",
-			stderr:  "[UP] 001_create_users.up.sql → user_version=1\n",
-		},
-		{
-			name: "done",
-			event: cliEvent{
-				Kind: cliEventMigration,
-				Migration: migrate.Event{
+			{
+				name: "done",
+				event: migrate.Event{
 					Kind:      migrate.EventDone,
 					Version:   2,
 					Direction: migrate.Up,
 				},
+				stderr: "[DONE] user_version=2\n",
 			},
-			stderr: "[DONE] user_version=2\n",
-		},
-	}
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stdout := &bytes.Buffer{}
-			stderr := &bytes.Buffer{}
-			prettyLogger(prettyLoggerOptions{
-				stdout:  stdout,
-				stderr:  stderr,
-				verbose: tt.verbose,
-				noColor: true,
-			})(tt.event)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				stdout := &bytes.Buffer{}
+				stderr := &bytes.Buffer{}
+				logger := newPrettyLogger(stdout, stderr, prettyLoggerOptions{
+					verbose: tt.verbose,
+					noColor: true,
+				})
+				logger.logMigration(tt.event)
 
-			assertOutput(t, "stdout", stdout, tt.stdout)
-			assertOutput(t, "stderr", stderr, tt.stderr)
-		})
-	}
+				assertOutput(t, "stdout", stdout, tt.stdout)
+				assertOutput(t, "stderr", stderr, tt.stderr)
+			})
+		}
+	})
+
 }
 
 func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 	t.Parallel()
 
-	t.Run("invalid migrate.EventKind", func(t *testing.T) {
-		defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
+	defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
 
-		prettyLogger(prettyLoggerOptions{}).toMigrationLogger()(
-			migrate.Event{
-				Kind: migrate.EventKind("unknown"),
-			},
-		)
-	})
-
-	t.Run("invalid cliEventKind", func(t *testing.T) {
-		defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
-		prettyLogger(prettyLoggerOptions{})(cliEvent{
-			Kind: cliEventKind("unknown"),
-		})
-	})
+	newPrettyLogger(io.Discard, io.Discard, prettyLoggerOptions{}).logMigration(
+		migrate.Event{
+			Kind: migrate.EventKind("unknown"),
+		},
+	)
 }
 
 func TestJSONLogger(t *testing.T) {
 	t.Parallel()
 
-	expectedStatus := migrate.MigrationStatus{
-		Version: 1,
-		Applied: []string{"001_create_users.up.sql"},
-		Pending: []string{"001_create_posts.up.sql"},
-	}
+	t.Run("logInit", func(t *testing.T) {
+		stdout := &bytes.Buffer{}
+		newJsonLogger(stdout).logInit("/some/file/path")
 
-	expectedMigration := migrate.Event{
-		Kind:      migrate.EventApply,
-		File:      "001_create_users.up.sql",
-		Direction: migrate.Up,
-		Version:   1,
-		SQL:       "create table users (id integer);",
-	}
+		want := &bytes.Buffer{}
+		init := struct{ Path string }{"/some/file/path"}
+		if err := json.NewEncoder(want).Encode(init); err != nil {
+			t.Fatal(err)
+		}
+		assertOutput(t, "stdout", stdout, want.String())
+	})
 
-	tests := []struct {
-		name  string
-		event cliEvent
-		want  any
-	}{
-		{
-			name: "init",
-			event: cliEvent{
-				Kind: cliEventInit,
-				Path: "/some/file/path",
-			},
-			want: struct {
-				Kind cliEventKind
-				Path string
-			}{cliEventInit, "/some/file/path"},
-		},
-		{
-			name: "status",
-			event: cliEvent{
-				Kind:   cliEventStatus,
-				Status: expectedStatus,
-			},
-			want: struct {
-				Kind   cliEventKind
-				Status migrate.MigrationStatus
-			}{cliEventStatus, expectedStatus},
-		},
-		{
-			name: "migration",
-			event: cliEvent{
-				Kind:      cliEventMigration,
-				Migration: expectedMigration,
-			},
-			want: expectedMigration,
-		},
-	}
+	t.Run("logStatus", func(t *testing.T) {
+		expectedStatus := migrate.MigrationStatus{
+			Version: 1,
+			Applied: []string{"001_create_users.up.sql"},
+			Pending: []string{"001_create_posts.up.sql"},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stdout := &bytes.Buffer{}
-			jsonLogger(stdout)(tt.event)
+		stdout := &bytes.Buffer{}
+		newJsonLogger(stdout).logStatus(expectedStatus)
 
-			want := &bytes.Buffer{}
-			if err := json.NewEncoder(want).Encode(tt.want); err != nil {
-				t.Fatal(err)
-			}
+		want := &bytes.Buffer{}
+		if err := json.NewEncoder(want).Encode(expectedStatus); err != nil {
+			t.Fatal(err)
+		}
+		assertOutput(t, "stdout", stdout, want.String())
+	})
 
-			assertOutput(t, tt.name, stdout, want.String())
-		})
-	}
+	t.Run("logMigration", func(t *testing.T) {
+		expectedMigration := migrate.Event{
+			Kind:      migrate.EventApply,
+			File:      "001_create_users.up.sql",
+			Direction: migrate.Up,
+			Version:   1,
+			SQL:       "create table users (id integer);",
+		}
+
+		stdout := &bytes.Buffer{}
+		newJsonLogger(stdout).logMigration(expectedMigration)
+
+		want := &bytes.Buffer{}
+		if err := json.NewEncoder(want).Encode(expectedMigration); err != nil {
+			t.Fatal(err)
+		}
+
+		assertOutput(t, "stdout", stdout, want.String())
+	})
 }
 
-func TestJSONLoggerPanicsOnUnknownEvent(t *testing.T) {
+func TestJSONLoggerPanicsOnUnknownMigrationEvent(t *testing.T) {
 	defer assertPanic(t, "jsonLogger", `unhandled event kind: "unknown"`)
 
 	stdout := &bytes.Buffer{}
-	jsonLogger(stdout)(cliEvent{
-		Kind: cliEventKind("unknown"),
+	newJsonLogger(stdout).logMigration(migrate.Event{
+		Kind: "unknown",
 	})
 }
 
