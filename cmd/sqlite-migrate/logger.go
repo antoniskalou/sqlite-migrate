@@ -21,9 +21,9 @@ type jsonLogger struct {
 	encoder *json.Encoder
 }
 
-func newJsonLogger(stdout io.Writer) *jsonLogger {
+func newJsonLogger(writer io.Writer) *jsonLogger {
 	return &jsonLogger{
-		encoder: json.NewEncoder(stdout),
+		encoder: json.NewEncoder(writer),
 	}
 }
 
@@ -60,22 +60,20 @@ type prettyLoggerOptions struct {
 
 type prettyLogger struct {
 	render renderer
-	stdout io.Writer
-	stderr io.Writer
+	writer io.Writer
 	opts   prettyLoggerOptions
 }
 
-func newPrettyLogger(stdout io.Writer, stderr io.Writer, opts prettyLoggerOptions) *prettyLogger {
+func newPrettyLogger(writer io.Writer, opts prettyLoggerOptions) *prettyLogger {
 	return &prettyLogger{
 		render: newRenderer(opts.noColor),
-		stdout: stdout,
-		stderr: stderr,
+		writer: writer,
 		opts:   opts,
 	}
 }
 
 func (l *prettyLogger) logInit(path string) {
-	fmt.Fprintf(l.stderr, "%s Migration directory initialised at %s\n",
+	fmt.Fprintf(l.writer, "%s Migration directory initialised at %s\n",
 		l.render(doneStyle, "[DONE]"),
 		path,
 	)
@@ -120,7 +118,7 @@ func (l *prettyLogger) logStatus(status migrate.MigrationStatus) {
 		}
 	}
 
-	fmt.Fprint(l.stderr, strings.Join(lines, "\n"))
+	fmt.Fprint(l.writer, strings.Join(lines, "\n"))
 }
 
 func (l *prettyLogger) logMigration(e migrate.Event) {
@@ -133,7 +131,7 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 			faintText = "(never applied)"
 		}
 
-		fmt.Fprintf(l.stderr, "%s %s %s\n",
+		fmt.Fprintf(l.writer, "%s %s %s\n",
 			l.render(skipStyle, "[SKIP]"),
 			e.File,
 			l.render(faintStyle, faintText),
@@ -145,17 +143,17 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 		}
 
 		dir := strings.ToUpper(e.Direction.String())
-		fmt.Fprintf(l.stderr, "%s %s → user_version=%s\n",
+		fmt.Fprintf(l.writer, "%s %s → user_version=%s\n",
 			l.render(dirStyle, "["+dir+"]"),
 			e.File,
 			l.render(versionStyle, strconv.Itoa(e.Version)),
 		)
 
 		if l.opts.verbose && e.SQL != "" {
-			fmt.Fprintln(l.stdout, l.render(faintStyle, e.SQL))
+			fmt.Fprintln(l.writer, l.render(faintStyle, e.SQL))
 		}
 	case migrate.EventDone:
-		fmt.Fprintf(l.stderr, "%s user_version=%s\n",
+		fmt.Fprintf(l.writer, "%s user_version=%s\n",
 			l.render(doneStyle, "[DONE]"),
 			l.render(versionStyle, strconv.Itoa(e.Version)),
 		)
