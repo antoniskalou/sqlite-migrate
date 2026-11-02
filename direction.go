@@ -23,7 +23,7 @@ func (d Direction) String() string {
 	case Down:
 		return "down"
 	default:
-		panic(fmt.Sprintf(errInvalidDirection, d))
+		return fmt.Sprintf("Direction(%d)", d)
 	}
 }
 
