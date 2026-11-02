@@ -16,6 +16,21 @@ import (
 
 const defaultMigrationDir = "./sql"
 
+func newLogger(cmd *cli.Command) logger {
+	if cmd.Bool("json") {
+		return newJsonLogger(cmd.Writer)
+	}
+
+	return newPrettyLogger(
+		cmd.Writer,
+		cmd.ErrWriter,
+		prettyLoggerOptions{
+			verbose: cmd.Bool("verbose"),
+			noColor: cmd.Bool("no-color"),
+		},
+	)
+}
+
 type commandContext struct {
 	rootDir  string
 	logger   logger
@@ -25,20 +40,7 @@ type commandContext struct {
 func newCommandContext(
 	cmd *cli.Command,
 ) commandContext {
-	var logger logger
-	if cmd.Bool("json") {
-		logger = newJsonLogger(cmd.Writer)
-	} else {
-		logger = newPrettyLogger(
-			cmd.Writer,
-			cmd.ErrWriter,
-			prettyLoggerOptions{
-				verbose: cmd.Bool("verbose"),
-				noColor: cmd.Bool("no-color"),
-			},
-		)
-	}
-
+	logger := newLogger(cmd)
 	rootDir := cmd.String("root")
 	return commandContext{
 		rootDir:  rootDir,
@@ -69,8 +71,8 @@ License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
 See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 		Version: migrate.Version,
 		ExitErrHandler: func(ctx context.Context, cmd *cli.Command, err error) {
-			cmdContext := newCommandContext(cmd)
-			cmdContext.logger.logError(err)
+			logger := newLogger(cmd)
+			logger.logError(err)
 			// don't actually call os.Exit, we leave that bit to the caller
 		},
 		Flags: []cli.Flag{
