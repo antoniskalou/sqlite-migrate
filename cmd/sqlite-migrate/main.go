@@ -31,6 +31,7 @@ func newCommandContext(
 	} else {
 		logger = newPrettyLogger(
 			cmd.Writer,
+			cmd.ErrWriter,
 			prettyLoggerOptions{
 				verbose: cmd.Bool("verbose"),
 				noColor: cmd.Bool("no-color"),

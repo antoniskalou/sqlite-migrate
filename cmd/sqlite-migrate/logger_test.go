@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"testing"
 
@@ -16,6 +17,7 @@ func TestPrettyLogger(t *testing.T) {
 		stdout := &bytes.Buffer{}
 		logger := newPrettyLogger(
 			stdout,
+			io.Discard,
 			prettyLoggerOptions{
 				verbose: true,
 				noColor: true,
@@ -31,6 +33,7 @@ func TestPrettyLogger(t *testing.T) {
 		stdout := &bytes.Buffer{}
 		logger := newPrettyLogger(
 			stdout,
+			io.Discard,
 			prettyLoggerOptions{
 				verbose: true,
 				noColor: true,
@@ -118,7 +121,7 @@ Pending migrations:
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				stdout := &bytes.Buffer{}
-				logger := newPrettyLogger(stdout, prettyLoggerOptions{
+				logger := newPrettyLogger(stdout, io.Discard, prettyLoggerOptions{
 					verbose: tt.verbose,
 					noColor: true,
 				})
@@ -129,6 +132,18 @@ Pending migrations:
 		}
 	})
 
+	t.Run("logError", func(t *testing.T) {
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+		logger := newPrettyLogger(stdout, stderr, prettyLoggerOptions{
+			noColor: true,
+		})
+
+		logger.logError(fmt.Errorf("something went wrong"))
+
+		assertOutput(t, stdout, "") // nothing written to stdout
+		assertOutput(t, stderr, "[ERR] something went wrong\n")
+	})
 }
 
 func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
@@ -136,7 +151,7 @@ func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 
 	defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
 
-	newPrettyLogger(io.Discard, prettyLoggerOptions{}).logMigration(
+	newPrettyLogger(io.Discard, io.Discard, prettyLoggerOptions{}).logMigration(
 		migrate.Event{
 			Kind: migrate.EventKind("unknown"),
 		},
@@ -193,6 +208,15 @@ func TestJSONLogger(t *testing.T) {
 		}
 
 		assertOutput(t, stdout, want.String())
+	})
+
+	t.Run("logError", func(t *testing.T) {
+		stdout := &bytes.Buffer{}
+		newJsonLogger(stdout).logError(
+			fmt.Errorf("something went wrong"),
+		)
+
+		assertOutput(t, stdout, `{"Error":"something went wrong"}`+"\n")
 	})
 }
 
