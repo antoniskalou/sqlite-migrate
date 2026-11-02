@@ -68,6 +68,11 @@ func main() {
 License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
 See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 		Version: migrate.Version,
+		ExitErrHandler: func(ctx context.Context, cmd *cli.Command, err error) {
+			cmdContext := newCommandContext(cmd)
+			cmdContext.logger.logError(err)
+			// don't actually call os.Exit, we leave that bit to the caller
+		},
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "verbose",
@@ -149,8 +154,6 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		renderer := newRenderer(cmd.Bool("no-color"))
-		fmt.Fprintf(cmd.ErrWriter, "%s %v\n", renderer(errorStyle, "[ERR]"), err)
 		os.Exit(1)
 	}
 }
