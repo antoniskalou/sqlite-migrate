@@ -426,6 +426,11 @@ func (l *spyLogger) logMigration(event migrate.Event) {
 	// by the migrate package tests.
 }
 
+func (l *spyLogger) logError(err error) {
+	// shouldn't happen
+	panic(err)
+}
+
 func (l *spyLogger) pop() logEvent {
 	end := len(l.events) - 1
 	event := l.events[end]
