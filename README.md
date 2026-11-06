@@ -6,7 +6,7 @@ A lightweight, cross-platform SQLite migration tool that tracks applied
 migrations using SQLite's built-in `user_version` pragma, without creating
 a migration-history table.
 
-![usage demo](demo.gif)
+![usage demo](demo.png)
 
 ## Usage
 
