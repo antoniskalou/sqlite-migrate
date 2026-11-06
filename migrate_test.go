@@ -3,6 +3,8 @@ package migrate
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -244,7 +246,7 @@ func TestDeploy(t *testing.T) {
 		fsys := sqltest.MergeFS(
 			newDefaultFS(),
 			map[string]string{
-				migrationT2Up: `invalid sql;`,
+				migrationT2Up: `create table t2(id integer primary key); invalid sql;`,
 			},
 		)
 		m, db := newTestMigrator(t, fsys, spy.OnEvent)
@@ -269,6 +271,99 @@ func TestDeploy(t *testing.T) {
 			},
 		})
 	})
+}
+
+func TestConcurrentDeployAll(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "concurrent.db")
+	dsn := "file:" + dbPath + "?_pragma=busy_timeout(1000)"
+
+	db1, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db1.Close()
+
+	db2, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+
+	db1.SetMaxOpenConns(5)
+	db2.SetMaxOpenConns(5)
+
+	fsys := sqltest.NewFS(map[string]string{
+		"001_create_table.up.sql": `
+create table migration_test (
+	id integer primary key,
+	value text not null
+);
+
+insert into migration_test (value)
+values ('migrated');
+`,
+	})
+
+	m1 := New(fsys, nil)
+	m2 := New(fsys, nil)
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+
+	deploy := func(m *Migrator, db *sql.DB) {
+		<-start
+
+		version, err := m.DeployAll(db)
+		if err != nil {
+			results <- err
+			return
+		}
+
+		if version != 1 {
+			results <- fmt.Errorf(
+				"expected version 1, got %d", version,
+			)
+			return
+		}
+
+		results <- nil
+	}
+
+	go deploy(m1, db1)
+	go deploy(m2, db2)
+
+	// release both deploy operations simultaneously
+	close(start)
+
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Errorf("concurrent deployment failed: %v", err)
+		}
+	}
+
+	var version int
+	if err := db1.QueryRow(
+		"pragma user_version",
+	).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+
+	if version != 1 {
+		t.Fatalf("expected user_version 1, got %d", version)
+	}
+
+	var count int
+	if err := db1.QueryRow(
+		"select count(*) from migration_test",
+	).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+
+	if count != 1 {
+		t.Fatalf("expected exactly one migration execution, got %d", count)
+	}
 }
 
 func TestRollback(t *testing.T) {

@@ -14,6 +14,7 @@
 package migrate
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -151,7 +152,7 @@ func (m *Migrator) migrate(
 
 	files, err := migrations(m.fsys, direction)
 	if err != nil {
-		return version, err
+		return 0, err
 	}
 
 	if !isTargetInRange(target, len(files)) {
@@ -163,47 +164,56 @@ func (m *Migrator) migrate(
 		slices.Reverse(files)
 	}
 
+loop:
 	for i, path := range files {
-		if target != nil {
-			if (direction == Up && version >= *target) ||
-				(direction == Down && version <= *target) {
-				break
-			}
+		// each file represents a transition between two versions
+		expectedVersion := i
+
+		if direction == Down {
+			expectedVersion = len(files) - i
 		}
 
-		if (direction == Up && i < version) ||
-			(direction == Down && len(files)-i != version) {
+		nextVersion := expectedVersion + direction.delta()
+
+		result, err := m.applyOne(
+			db,
+			path,
+			direction,
+			expectedVersion,
+			nextVersion,
+			target,
+		)
+		if err != nil {
+			return result.version, fmt.Errorf(
+				"%s migration %q (version %d): %w",
+				direction,
+				path,
+				result.version,
+				err,
+			)
+		}
+
+		version = result.version
+
+		switch result.status {
+		case applyTargetReached:
+			break loop
+		case applySkipped:
 			m.emit(Event{
 				Kind:      EventSkip,
 				File:      path,
 				Direction: direction,
 				Version:   version,
 			})
-			continue
+		case applySucceeded:
+			m.emit(Event{
+				Kind:      EventApply,
+				File:      path,
+				Direction: direction,
+				Version:   version,
+				SQL:       result.sql,
+			})
 		}
-
-		nextVersion := version + direction.delta()
-
-		sql, err := applyMigration(db, m.fsys, path, nextVersion)
-		if err != nil {
-			return version, fmt.Errorf(
-				"%s migration %q (version %d): %w",
-				direction,
-				path,
-				nextVersion,
-				err,
-			)
-		}
-
-		m.emit(Event{
-			Kind:      EventApply,
-			File:      path,
-			Direction: direction,
-			Version:   nextVersion,
-			SQL:       sql,
-		})
-
-		version = nextVersion
 	}
 
 	m.emit(Event{
@@ -211,47 +221,101 @@ func (m *Migrator) migrate(
 		Version:   version,
 		Direction: direction,
 	})
+
 	return version, nil
 }
 
-func applyMigration(
+type applyStatus uint8
+
+const (
+	// migration skipped, already applied
+	applySkipped applyStatus = iota
+	// migration (un)applied and committed
+	applySucceeded
+	// current db version reached the requested target, no more shall be processed
+	applyTargetReached
+)
+
+type applyResult struct {
+	version int
+	status  applyStatus
+	sql     string
+}
+
+func (m *Migrator) applyOne(
 	db *sql.DB,
-	fsys fs.FS,
 	path string,
-	version int,
-) (string, error) {
-	tx, err := db.Begin()
+	direction Direction,
+	expectedVersion, nextVersion int,
+	target *int,
+) (applyResult, error) {
+	tx, err := beginImmediate(context.Background(), db)
 	if err != nil {
-		return "", fmt.Errorf("%w: begin migration %q: %w", ErrDatabase, path, err)
+		return applyResult{}, fmt.Errorf("%w: %w", ErrDatabase, err)
 	}
 	defer tx.Rollback()
 
-	sql, err := runSQLFile(tx, fsys, path)
+	// this is the authoritative version read, we have acquired the write lock so
+	// we're the only ones allowed to apply changes.
+	version, err := getUserVersion(tx)
 	if err != nil {
-		return sql, err
+		return applyResult{}, err
 	}
 
-	if err := setUserVersion(tx, version); err != nil {
-		return sql, err
+	result := applyResult{
+		version: version,
+	}
+
+	if target != nil {
+		if (direction == Up && version >= *target) ||
+			(direction == Down && version <= *target) {
+			result.status = applyTargetReached
+			return result, nil
+		}
+	}
+
+	// the migration may have already been applied (or unapplied)
+	// by another migrator while we were waiting for the lock.
+	if (direction == Up && version >= nextVersion) ||
+		(direction == Down && version <= nextVersion) {
+		return result, nil
+	}
+
+	// if the db is not at the expected starting version, don't execute SQL
+	// against an unexpected schema.
+	if version != expectedVersion {
+		return result, fmt.Errorf(
+			"unexpected database version %d, migration expects version %d",
+			version,
+			expectedVersion,
+		)
+	}
+
+	sql, err := runSQLFile(tx, m.fsys, path)
+	if err != nil {
+		return result, err
+	}
+
+	if err := setUserVersion(tx, nextVersion); err != nil {
+		return result, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return sql, fmt.Errorf("%w: commit migration %s: %w", ErrDatabase, path, err)
+		return result, fmt.Errorf(
+			"%w: commit migration: %w",
+			ErrDatabase,
+			err,
+		)
 	}
 
-	return sql, nil
+	result.version = nextVersion
+	result.status = applySucceeded
+	result.sql = sql
+
+	return result, nil
 }
 
-func isTargetInRange(target *int, numMigrations int) bool {
-	return target == nil || (*target >= 0 && *target <= numMigrations)
-}
-
-// interface that allows us to pass a sql.DB or a sql.Tx to functions
-type sqlExecutor interface {
-	Exec(query string, args ...any) (sql.Result, error)
-}
-
-func runSQLFile(db sqlExecutor, fsys fs.FS, file string) (string, error) {
+func runSQLFile(db dbtx, fsys fs.FS, file string) (string, error) {
 	sqlBytes, err := fs.ReadFile(fsys, file)
 	if err != nil {
 		return "", fmt.Errorf("%w: read %q: %w", ErrFilesystem, file, err)
@@ -265,7 +329,7 @@ func runSQLFile(db sqlExecutor, fsys fs.FS, file string) (string, error) {
 	return sql, nil
 }
 
-func getUserVersion(db *sql.DB) (int, error) {
+func getUserVersion(db dbtx) (int, error) {
 	var version int
 	err := db.QueryRow("pragma user_version").Scan(&version)
 	if err != nil {
@@ -274,7 +338,7 @@ func getUserVersion(db *sql.DB) (int, error) {
 	return version, nil
 }
 
-func setUserVersion(db sqlExecutor, version int) error {
+func setUserVersion(db dbtx, version int) error {
 	// prepared statements don't work for pragma
 	_, err := db.Exec("pragma user_version = " + strconv.Itoa(version))
 	if err != nil {
@@ -303,4 +367,8 @@ func migrations(fsys fs.FS, direction Direction) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+func isTargetInRange(target *int, numMigrations int) bool {
+	return target == nil || (*target >= 0 && *target <= numMigrations)
 }
