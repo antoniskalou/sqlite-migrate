@@ -139,7 +139,7 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 		if e.Direction == migrate.Up {
 			faintText = "(already applied)"
 		} else {
-			faintText = "(never applied)"
+			faintText = "(not applied)"
 		}
 
 		fmt.Fprintf(l.stdout, "%s %s %s\n",
