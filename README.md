@@ -65,8 +65,7 @@ func main() {
   }
   fmt.Println("current version:", currentVersion)
 
-  target := 2
-  version, err := migrator.Deploy(db, &target)
+  version, err := migrator.Deploy(db, 2)
   if err != nil {
     log.Fatal(err)
   }
