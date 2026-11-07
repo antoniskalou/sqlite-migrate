@@ -6,6 +6,9 @@ jobs:
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      pull-requests: write # required for posting comments
+      contents: write      # required for git push
     strategy:
       matrix:
         os:
@@ -42,7 +45,10 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: go test -race -count=20 -cover ./...
+        run: go test -race -count=20 -coverprofile=cover.out ./...
 
       - name: Build
         run: go build ./...
+
+      - name: Go Beautiful HTML Coverage
+        uses: 'gha-common/go-beautiful-html-coverage@v1'
