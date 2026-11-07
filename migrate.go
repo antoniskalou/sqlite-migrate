@@ -253,7 +253,7 @@ func (m *Migrator) applyOne(
 	if err != nil {
 		return applyResult{}, fmt.Errorf("%w: %w", ErrDatabase, err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// this is the authoritative version read, we have acquired the write lock so
 	// we're the only ones allowed to apply changes.
