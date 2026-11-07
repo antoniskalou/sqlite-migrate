@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
+	"github.com/charmbracelet/colorprofile"
 )
 
 type logger interface {
@@ -64,7 +66,6 @@ type prettyLoggerOptions struct {
 }
 
 type prettyLogger struct {
-	render renderer
 	stdout io.Writer
 	stderr io.Writer
 	opts   prettyLoggerOptions
@@ -76,16 +77,29 @@ func newPrettyLogger(
 	opts prettyLoggerOptions,
 ) *prettyLogger {
 	return &prettyLogger{
-		render: newRenderer(opts.noColor),
-		stdout: stdout,
-		stderr: stderr,
+		stdout: newOutputWriter(stdout, opts.noColor),
+		stderr: newOutputWriter(stderr, opts.noColor),
 		opts:   opts,
 	}
 }
 
+func newOutputWriter(w io.Writer, noColor bool) *colorprofile.Writer {
+	writer := colorprofile.NewWriter(w, os.Environ())
+
+	if noColor {
+		// NoTTY to disable all colours and formatting.
+		//
+		// TODO: support ASCII instead (its more no-color compliant), however tests
+		// currently break with it
+		writer.Profile = colorprofile.NoTTY
+	}
+
+	return writer
+}
+
 func (l *prettyLogger) logInit(path string) {
 	fmt.Fprintf(l.stdout, "%s Migration directory initialised at %s\n",
-		l.render(doneStyle, "[DONE]"),
+		doneStyle.Render("[DONE]"),
 		path,
 	)
 }
@@ -95,36 +109,36 @@ func (l *prettyLogger) logStatus(status migrate.MigrationStatus) {
 	pending := status.Pending
 
 	lines := []string{
-		l.render(titleStyle, "Database status"),
+		titleStyle.Render("Database status"),
 		"",
 		fmt.Sprintf("%-10s %s", "Version:",
-			l.render(versionStyle, strconv.Itoa(status.Version))),
+			versionStyle.Render(strconv.Itoa(status.Version))),
 		fmt.Sprintf("%-10s %s", "Pending:",
-			l.render(pendingStyle, strconv.Itoa(len(pending)))),
+			pendingStyle.Render(strconv.Itoa(len(pending)))),
 		"",
-		l.render(sectionStyle, "Applied migrations:"),
+		sectionStyle.Render("Applied migrations:"),
 	}
 
 	if len(applied) == 0 {
-		lines = append(lines, l.render(faintStyle, "  (none)"))
+		lines = append(lines, faintStyle.Render("  (none)"))
 	} else {
 		for _, migration := range applied {
 			lines = append(
 				lines,
-				l.render(upStyle, "  ✓ ")+filepath.Base(migration),
+				upStyle.Render("  ✓ ")+filepath.Base(migration),
 			)
 		}
 	}
 
-	lines = append(lines, "", l.render(sectionStyle, "Pending migrations:"))
+	lines = append(lines, "", sectionStyle.Render("Pending migrations:"))
 
 	if len(pending) == 0 {
-		lines = append(lines, l.render(faintStyle, "  (none)"))
+		lines = append(lines, faintStyle.Render("  (none)"))
 	} else {
 		for _, migration := range pending {
 			lines = append(
 				lines,
-				l.render(pendingStyle, "  • ")+filepath.Base(migration),
+				pendingStyle.Render("  • ")+filepath.Base(migration),
 			)
 		}
 	}
@@ -143,9 +157,9 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 		}
 
 		fmt.Fprintf(l.stdout, "%s %s %s\n",
-			l.render(skipStyle, "[SKIP]"),
+			skipStyle.Render("[SKIP]"),
 			e.File,
-			l.render(faintStyle, faintText),
+			faintStyle.Render(faintText),
 		)
 	case migrate.EventApply:
 		dirStyle := upStyle
@@ -155,18 +169,18 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 
 		dir := strings.ToUpper(e.Direction.String())
 		fmt.Fprintf(l.stdout, "%s %s → user_version=%s\n",
-			l.render(dirStyle, "["+dir+"]"),
+			dirStyle.Render("["+dir+"]"),
 			e.File,
-			l.render(versionStyle, strconv.Itoa(e.Version)),
+			versionStyle.Render(strconv.Itoa(e.Version)),
 		)
 
 		if l.opts.verbose && e.SQL != "" {
-			fmt.Fprintln(l.stdout, l.render(faintStyle, e.SQL))
+			fmt.Fprintln(l.stdout, faintStyle.Render(e.SQL))
 		}
 	case migrate.EventDone:
 		fmt.Fprintf(l.stdout, "%s user_version=%s\n",
-			l.render(doneStyle, "[DONE]"),
-			l.render(versionStyle, strconv.Itoa(e.Version)),
+			doneStyle.Render("[DONE]"),
+			versionStyle.Render(strconv.Itoa(e.Version)),
 		)
 	default:
 		panicUnhandled(e.Kind)
@@ -174,7 +188,7 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 }
 
 func (l *prettyLogger) logError(err error) {
-	fmt.Fprintf(l.stderr, "%s %v\n", l.render(errorStyle, "[ERR]"), err)
+	fmt.Fprintf(l.stderr, "%s %v\n", errorStyle.Render("[ERR]"), err)
 }
 
 func panicUnhandled(kind migrate.EventKind) {
