@@ -82,9 +82,8 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				Usage:   "print SQL statements while migrating",
 			},
 			&cli.BoolFlag{
-				Name:    "no-color",
-				Usage:   "disable coloured output",
-				Sources: cli.EnvVars("NO_COLOR"),
+				Name:  "no-color",
+				Usage: "disable coloured and formatted output",
 			},
 			&cli.BoolFlag{
 				Name:  "json",
