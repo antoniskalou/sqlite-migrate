@@ -8,6 +8,9 @@ builds:
   - id: sqlite-migrate
     main: ./cmd/sqlite-migrate
     binary: sqlite-migrate
+    ldflags:
+      # strip debug info, make binaries smaller
+      - -s -w
     env:
       - CGO_ENABLED=0
     goos:
