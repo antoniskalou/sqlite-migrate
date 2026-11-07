@@ -50,10 +50,16 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Publish coverage
+      - name: Generate coverage HTML
         # don't need to publish for all, output is the same
+        if: matrix.os == 'ubuntu-latest'
+        run: go tool cover -html=coverage.out -o coverage.html
+
+      - name: Publish coverage
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
-          path: coverage.out
-          archive: false
+          name: coverage
+          path: |
+            coverage.out
+            coverage.html
