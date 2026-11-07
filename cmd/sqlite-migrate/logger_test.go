@@ -54,7 +54,7 @@ Applied migrations:
   ✓ 001_create_users.up.sql
 
 Pending migrations:
-  • 002_create_posts.up.sql`
+  • 002_create_posts.up.sql` + "\n"
 
 		assertOutput(t, stdout, want)
 	})

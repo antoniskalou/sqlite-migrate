@@ -129,7 +129,7 @@ func (l *prettyLogger) logStatus(status migrate.MigrationStatus) {
 		}
 	}
 
-	fmt.Fprint(l.stdout, strings.Join(lines, "\n"))
+	fmt.Fprintln(l.stdout, strings.Join(lines, "\n"))
 }
 
 func (l *prettyLogger) logMigration(e migrate.Event) {
