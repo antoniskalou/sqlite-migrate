@@ -25,7 +25,7 @@ import (
 )
 
 // Version is the current version of the migrate library.
-const Version = "0.0.13"
+const Version = "0.0.14"
 
 // Sentinel errors returned by the migrate package.
 var (
