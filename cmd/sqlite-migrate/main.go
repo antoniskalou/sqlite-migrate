@@ -216,6 +216,7 @@ func cmdInit(ctx commandContext) error {
 	const sql = `-- code goes here`
 
 	rootDir := ctx.rootDir
+	// #nosec G301 -- Migration directories are intentionally world readable.
 	err := os.MkdirAll(rootDir, 0o755)
 	if err != nil {
 		return fmt.Errorf("failed to create migration dir: %w", err)
@@ -246,7 +247,7 @@ func cmdStatus(ctx commandContext, path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	status, err := ctx.migrator.Status(db)
 	if err != nil {
@@ -263,7 +264,7 @@ func cmdDeploy(ctx commandContext, path string, target *int) error {
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if target == nil {
 		_, err = ctx.migrator.DeployAll(db)
@@ -282,7 +283,7 @@ func cmdRollback(ctx commandContext, path string, target int) error {
 	if err != nil {
 		return fmt.Errorf("failed to open db at %s: %w", path, err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	_, err = ctx.migrator.Rollback(db, target)
 	if err != nil {
@@ -293,6 +294,8 @@ func cmdRollback(ctx commandContext, path string, target int) error {
 }
 
 func writeIfNotExists(filename, content string) error {
+	// #nosec G302 G304 -- Migration files are intentionally world-readable and
+	// paths are controlled.
 	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		if os.IsExist(err) {
@@ -300,7 +303,7 @@ func writeIfNotExists(filename, content string) error {
 		}
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.WriteString(content); err != nil {
 		_ = f.Close()
