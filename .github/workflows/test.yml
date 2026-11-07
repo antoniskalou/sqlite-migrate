@@ -1,6 +1,9 @@
 name: Tests
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   test:
@@ -42,7 +45,15 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: go test -race -count=20 -cover ./...
+        run: go test -race -count=20 -coverprofile=coverage.out ./...
 
       - name: Build
         run: go build ./...
+
+      - name: Publish coverage
+        # don't need to publish for all, output is the same
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          path: coverage.out
+          archive: false
