@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	migrate "github.com/antoniskalou/sqlite-migrate"
+	"github.com/antoniskalou/smidge"
 	"github.com/urfave/cli/v3"
 	_ "modernc.org/sqlite"
 )
@@ -34,7 +34,7 @@ func newLogger(cmd *cli.Command) logger {
 type commandContext struct {
 	rootDir  string
 	logger   logger
-	migrator *migrate.Migrator
+	migrator *smidge.Migrator
 }
 
 func newCommandContext(
@@ -45,7 +45,7 @@ func newCommandContext(
 	return commandContext{
 		rootDir:  rootDir,
 		logger:   logger,
-		migrator: migrate.New(os.DirFS(rootDir), logger.logMigration),
+		migrator: smidge.New(os.DirFS(rootDir), logger.logMigration),
 	}
 }
 
@@ -64,7 +64,7 @@ func main() {
 		Required:  true,
 	}
 	cmd := &cli.Command{
-		Name:  "sqlite-migrate",
+		Name:  "smidge",
 		Usage: "manage SQLite database migrations",
 		Description: `A lightweight tool for managing SQLite migrations.
 
@@ -73,27 +73,27 @@ on the filesystem define the available migrations.
 
 Examples:
 	# Start a new project in ./sql
-	sqlite-migrate init
+	smidge init
 
 	# Print status of the database
-	sqlite-migrate status app.db
+	smidge status app.db
 
 	# Deploy all migrations
-	sqlite-migrate deploy app.db
+	smidge deploy app.db
 
 	# Roll back to version 1
-	sqlite-migrate rollback app.db --target 1
+	smidge rollback app.db --target 1
 
 	# Deploy migrations from different directory
-	sqlite-migrate --root ./fixed-sql deploy app.db
+	smidge --root ./fixed-sql deploy app.db
 
 	# Print status again, but in JSON
-	sqlite-migrate --json status app.db`,
+	smidge --json status app.db`,
 		Copyright: `Copyright © 2026 Antonis Kalou
 
 License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
 See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
-		Version: migrate.Version,
+		Version: smidge.Version,
 		ExitErrHandler: func(ctx context.Context, cmd *cli.Command, err error) {
 			logger := newLogger(cmd)
 			logger.logError(err)
@@ -129,8 +129,8 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 Existing migration files will not be overwritten.
 					
 Examples:
-	sqlite-migrate init
-	sqlite-migrate init --root ./migrations`,
+	smidge init
+	smidge init --root ./migrations`,
 				Action: withCommandContext(
 					func(ctx commandContext, cmd *cli.Command) error {
 						return cmdInit(ctx)
@@ -145,7 +145,7 @@ Examples:
 Requires an existing database.
 					
 Examples:
-	sqlite-migrate status app.db`,
+	smidge status app.db`,
 				Arguments: []cli.Argument{&dbPathArg},
 				Action: withCommandContext(
 					func(ctx commandContext, cmd *cli.Command) error {
@@ -162,10 +162,10 @@ Creates a database if it doesn't already exist.
 
 Examples:
 	# Apply everything pending
-	sqlite-migrate deploy app.db
+	smidge deploy app.db
 
 	# Apply up to version 3
-	sqlite-migrate deploy app.db --target 3`,
+	smidge deploy app.db --target 3`,
 				Arguments: []cli.Argument{&dbPathArg},
 				Flags: []cli.Flag{&cli.IntFlag{
 					Name:  "target",
@@ -194,10 +194,10 @@ Rolling back migrations may result in data loss. Be careful!
 					
 Examples:
 	# Roll back to version 2
-	sqlite-migrate rollback app.db --target 2
+	smidge rollback app.db --target 2
 
 	# Roll back everything
-	sqlite-migrate rollback app.db --target 0`,
+	smidge rollback app.db --target 0`,
 				Arguments: []cli.Argument{&dbPathArg},
 				Flags: []cli.Flag{&cli.IntFlag{
 					Name:     "target",

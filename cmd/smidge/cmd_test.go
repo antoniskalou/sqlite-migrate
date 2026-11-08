@@ -7,8 +7,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	migrate "github.com/antoniskalou/sqlite-migrate"
-	"github.com/antoniskalou/sqlite-migrate/internal/sqltest"
+	"github.com/antoniskalou/smidge"
+	"github.com/antoniskalou/smidge/internal/sqltest"
 )
 
 func TestCmdInit(t *testing.T) {
@@ -400,7 +400,7 @@ func newDefaultFS() fstest.MapFS {
 type logEvent struct {
 	kind   string
 	path   string
-	status migrate.MigrationStatus
+	status smidge.MigrationStatus
 }
 
 type spyLogger struct {
@@ -414,16 +414,16 @@ func (l *spyLogger) logInit(path string) {
 	})
 }
 
-func (l *spyLogger) logStatus(status migrate.MigrationStatus) {
+func (l *spyLogger) logStatus(status smidge.MigrationStatus) {
 	l.events = append(l.events, logEvent{
 		kind:   "status",
 		status: status,
 	})
 }
 
-func (l *spyLogger) logMigration(event migrate.Event) {
+func (l *spyLogger) logMigration(event smidge.Event) {
 	// we're not capturing migration events for these tests, its already checked
-	// by the migrate package tests.
+	// by the smidge package tests.
 }
 
 func (l *spyLogger) logError(err error) {
@@ -441,7 +441,7 @@ func (l *spyLogger) pop() logEvent {
 func newTestCommandContext(fsys fstest.MapFS) (commandContext, *spyLogger) {
 	logger := &spyLogger{}
 	return commandContext{
-		migrator: migrate.New(fsys, nil),
+		migrator: smidge.New(fsys, nil),
 		logger:   logger,
 	}, logger
 }

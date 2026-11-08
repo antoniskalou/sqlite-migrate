@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	migrate "github.com/antoniskalou/sqlite-migrate"
+	"github.com/antoniskalou/smidge"
 	"github.com/charmbracelet/colorprofile"
 	"go.followtheprocess.codes/snapshot"
 )
@@ -21,9 +21,9 @@ func TestOutputWriter(t *testing.T) {
 		want    colorprofile.Profile
 	}{
 		{
-			name:  "MIGRATE_NO_COLOR",
+			name:  "SMIDGE_NO_COLOR",
 			isTTY: true,
-			env:   map[string]string{"MIGRATE_NO_COLOR": "0"},
+			env:   map[string]string{"SMIDGE_NO_COLOR": "0"},
 			want:  colorprofile.ASCII,
 		},
 		{
@@ -85,7 +85,7 @@ func TestPrettyLogger(t *testing.T) {
 	t.Run("logStatus", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
 		logger := newPrettyLogger(stdout, io.Discard, prettyLoggerOptions{})
-		logger.logStatus(migrate.MigrationStatus{
+		logger.logStatus(smidge.MigrationStatus{
 			Version: 1,
 			Applied: []string{"001_create_users.up.sql"},
 			Pending: []string{"002_create_posts.up.sql"},
@@ -97,49 +97,49 @@ func TestPrettyLogger(t *testing.T) {
 	t.Run("logMigration", func(t *testing.T) {
 		tests := []struct {
 			name    string
-			event   migrate.Event
+			event   smidge.Event
 			verbose bool
 		}{
 			{
 				name: "skip up",
-				event: migrate.Event{
-					Kind:      migrate.EventSkip,
+				event: smidge.Event{
+					Kind:      smidge.EventSkip,
 					File:      "001_create_users.up.sql",
-					Direction: migrate.Up,
+					Direction: smidge.Up,
 				},
 			},
 			{
 				name: "skip down",
-				event: migrate.Event{
-					Kind:      migrate.EventSkip,
+				event: smidge.Event{
+					Kind:      smidge.EventSkip,
 					File:      "001_create_users.down.sql",
-					Direction: migrate.Down,
+					Direction: smidge.Down,
 				},
 			},
 			{
 				name: "apply up",
-				event: migrate.Event{
-					Kind:      migrate.EventApply,
+				event: smidge.Event{
+					Kind:      smidge.EventApply,
 					File:      "001_create_users.up.sql",
-					Direction: migrate.Up,
+					Direction: smidge.Up,
 					Version:   1,
 				},
 			},
 			{
 				name: "apply down",
-				event: migrate.Event{
-					Kind:      migrate.EventApply,
+				event: smidge.Event{
+					Kind:      smidge.EventApply,
 					File:      "001_create_users.down.sql",
-					Direction: migrate.Down,
+					Direction: smidge.Down,
 					Version:   1,
 				},
 			},
 			{
 				name: "SQL shown when verbose",
-				event: migrate.Event{
-					Kind:      migrate.EventApply,
+				event: smidge.Event{
+					Kind:      smidge.EventApply,
 					File:      "001_create_users.up.sql",
-					Direction: migrate.Up,
+					Direction: smidge.Up,
 					Version:   1,
 					SQL:       "create table users (id integer);",
 				},
@@ -147,10 +147,10 @@ func TestPrettyLogger(t *testing.T) {
 			},
 			{
 				name: "done",
-				event: migrate.Event{
-					Kind:      migrate.EventDone,
+				event: smidge.Event{
+					Kind:      smidge.EventDone,
 					Version:   2,
-					Direction: migrate.Up,
+					Direction: smidge.Up,
 				},
 			},
 		}
@@ -195,8 +195,8 @@ func TestPrettyLoggerPanicsOnUnknownEvent(t *testing.T) {
 	defer assertPanic(t, "prettyLogger", `unhandled event kind: "unknown"`)
 
 	newPrettyLogger(io.Discard, io.Discard, prettyLoggerOptions{}).logMigration(
-		migrate.Event{
-			Kind: migrate.EventKind("unknown"),
+		smidge.Event{
+			Kind: smidge.EventKind("unknown"),
 		},
 	)
 }
@@ -217,7 +217,7 @@ func TestJSONLogger(t *testing.T) {
 	})
 
 	t.Run("logStatus", func(t *testing.T) {
-		expectedStatus := migrate.MigrationStatus{
+		expectedStatus := smidge.MigrationStatus{
 			Version: 1,
 			Applied: []string{"001_create_users.up.sql"},
 			Pending: []string{"001_create_posts.up.sql"},
@@ -234,10 +234,10 @@ func TestJSONLogger(t *testing.T) {
 	})
 
 	t.Run("logMigration", func(t *testing.T) {
-		expectedMigration := migrate.Event{
-			Kind:      migrate.EventApply,
+		expectedMigration := smidge.Event{
+			Kind:      smidge.EventApply,
 			File:      "001_create_users.up.sql",
-			Direction: migrate.Up,
+			Direction: smidge.Up,
 			Version:   1,
 			SQL:       "create table users (id integer);",
 		}
@@ -267,7 +267,7 @@ func TestJSONLoggerPanicsOnUnknownMigrationEvent(t *testing.T) {
 	defer assertPanic(t, "jsonLogger", `unhandled event kind: "unknown"`)
 
 	stdout := &bytes.Buffer{}
-	newJsonLogger(stdout).logMigration(migrate.Event{
+	newJsonLogger(stdout).logMigration(smidge.Event{
 		Kind: "unknown",
 	})
 }

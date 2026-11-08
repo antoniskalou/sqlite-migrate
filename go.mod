@@ -1,4 +1,4 @@
-module github.com/antoniskalou/sqlite-migrate
+module github.com/antoniskalou/smidge
 
 go 1.27.3
 
