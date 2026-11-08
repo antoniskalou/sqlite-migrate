@@ -41,11 +41,19 @@ func TestPrettyLogger(t *testing.T) {
 			verbose bool
 		}{
 			{
-				name: "skip",
+				name: "skip up",
 				event: migrate.Event{
 					Kind:      migrate.EventSkip,
 					File:      "001_create_users.up.sql",
 					Direction: migrate.Up,
+				},
+			},
+			{
+				name: "skip down",
+				event: migrate.Event{
+					Kind:      migrate.EventSkip,
+					File:      "001_create_users.down.sql",
+					Direction: migrate.Down,
 				},
 			},
 			{
