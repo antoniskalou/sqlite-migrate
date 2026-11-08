@@ -62,7 +62,11 @@ func encodeOrPanic(enc *json.Encoder, v any) {
 
 type prettyLoggerOptions struct {
 	verbose bool
+	// Disable all coloured output, but keep formatting. Takes precedence over
+	// forceColor.
 	noColor bool
+	// Force colours to be displayed
+	forceColor bool
 }
 
 type prettyLogger struct {
@@ -77,21 +81,26 @@ func newPrettyLogger(
 	opts prettyLoggerOptions,
 ) *prettyLogger {
 	return &prettyLogger{
-		stdout: newOutputWriter(stdout, opts.noColor),
-		stderr: newOutputWriter(stderr, opts.noColor),
+		stdout: newOutputWriter(stdout, opts),
+		stderr: newOutputWriter(stderr, opts),
 		opts:   opts,
 	}
 }
 
-func newOutputWriter(w io.Writer, noColor bool) *colorprofile.Writer {
+func newOutputWriter(w io.Writer, opts prettyLoggerOptions) *colorprofile.Writer {
 	writer := colorprofile.NewWriter(w, os.Environ())
 
-	if _, envSet := os.LookupEnv("MIGRATE_NO_COLOR"); noColor || envSet {
-		// NoTTY to disable all colours and formatting.
-		//
-		// TODO: support ASCII instead (its more no-color compliant), however tests
-		// currently break with it
-		writer.Profile = colorprofile.NoTTY
+	if writer.Profile == colorprofile.NoTTY {
+		// skip, if we're in NoTTY we shouldn't change anything
+		return writer
+	}
+
+	envNoColor := os.Getenv("MIGRATE_NO_COLOR") != ""
+	switch {
+	case opts.noColor, envNoColor:
+		writer.Profile = colorprofile.ASCII
+	case opts.forceColor:
+		writer.Profile = colorprofile.TrueColor
 	}
 
 	return writer
