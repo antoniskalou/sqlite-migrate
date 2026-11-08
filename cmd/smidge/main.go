@@ -34,7 +34,7 @@ func newLogger(cmd *cli.Command) logger {
 type commandContext struct {
 	rootDir  string
 	logger   logger
-	migrator *migrate.Migrator
+	migrator *smidge.Migrator
 }
 
 func newCommandContext(
@@ -45,7 +45,7 @@ func newCommandContext(
 	return commandContext{
 		rootDir:  rootDir,
 		logger:   logger,
-		migrator: migrate.New(os.DirFS(rootDir), logger.logMigration),
+		migrator: smidge.New(os.DirFS(rootDir), logger.logMigration),
 	}
 }
 
@@ -93,7 +93,7 @@ Examples:
 
 License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
 See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
-		Version: migrate.Version,
+		Version: smidge.Version,
 		ExitErrHandler: func(ctx context.Context, cmd *cli.Command, err error) {
 			logger := newLogger(cmd)
 			logger.logError(err)

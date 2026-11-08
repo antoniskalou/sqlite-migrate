@@ -1,4 +1,4 @@
-// Package migrate applies and rolls back SQL migrations for SQLite databases.
+// Package smidge applies and rolls back SQL migrations for SQLite databases.
 //
 // Migration state is stored in SQLite's PRAGMA user_version rather than in a
 // separate migration-history table. Migration files are selected by their
@@ -11,7 +11,7 @@
 //
 // Each migration's SQL statements and the corresponding user_version update
 // are executed in a transaction.
-package migrate
+package smidge
 
 import (
 	"context"
@@ -24,10 +24,10 @@ import (
 	"strings"
 )
 
-// Version is the current version of the migrate library.
+// Version is the current version of the smidge library.
 const Version = "0.0.16"
 
-// Sentinel errors returned by the migrate package.
+// Sentinel errors returned by the smidge package.
 var (
 	// ErrFilesystem indicates an error accessing migration files.
 	ErrFilesystem = errors.New("migration filesystem error")

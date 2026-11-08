@@ -51,10 +51,10 @@ import (
 func main() {
   db := connectToSQLite(...) // *sql.DB
 
-  migrator := migrate.Migrator{
+  migrator := smidge.Migrator{
     RootDir: os.DirFS("./my-migration-dir"),
     // optional event handler
-    OnEvent: func(event migrate.Event) {
+    OnEvent: func(event smidge.Event) {
       fmt.Println("received event:", event)
     },
   }

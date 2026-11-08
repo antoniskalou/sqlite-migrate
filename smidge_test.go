@@ -1,4 +1,4 @@
-package migrate
+package smidge
 
 import (
 	"database/sql"

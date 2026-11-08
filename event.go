@@ -1,4 +1,4 @@
-package migrate
+package smidge
 
 // EventKind identifies the kind of event emitted during a migration operation.
 type EventKind string

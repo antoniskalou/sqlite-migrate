@@ -15,8 +15,8 @@ import (
 
 type logger interface {
 	logInit(path string)
-	logStatus(status migrate.MigrationStatus)
-	logMigration(event migrate.Event)
+	logStatus(status smidge.MigrationStatus)
+	logMigration(event smidge.Event)
 	logError(err error)
 }
 
@@ -34,13 +34,13 @@ func (l *jsonLogger) logInit(path string) {
 	encodeOrPanic(l.encoder, struct{ Path string }{path})
 }
 
-func (l *jsonLogger) logStatus(status migrate.MigrationStatus) {
+func (l *jsonLogger) logStatus(status smidge.MigrationStatus) {
 	encodeOrPanic(l.encoder, status)
 }
 
-func (l *jsonLogger) logMigration(event migrate.Event) {
+func (l *jsonLogger) logMigration(event smidge.Event) {
 	switch event.Kind {
-	case migrate.EventApply, migrate.EventSkip, migrate.EventDone:
+	case smidge.EventApply, smidge.EventSkip, smidge.EventDone:
 		encodeOrPanic(l.encoder, event)
 	default:
 		panicUnhandled(event.Kind)
@@ -55,7 +55,7 @@ func encodeOrPanic(enc *json.Encoder, v any) {
 	if err := enc.Encode(v); err != nil {
 		// could happen if pipe closes, the filesystem is full, etc.
 		// we choose to panic for simplicity, as propagating the error is annoying
-		// and would require a change in migrate.OnEventFunc
+		// and would require a change in smidge.OnEventFunc
 		panic(err)
 	}
 }
@@ -91,7 +91,7 @@ func newOutputWriter(w io.Writer, noColor bool) *colorprofile.Writer {
 		return writer
 	}
 
-	envNoColor := os.Getenv("MIGRATE_NO_COLOR") != ""
+	envNoColor := os.Getenv("SMIDGE_NO_COLOR") != ""
 	if noColor || envNoColor {
 		writer.Profile = colorprofile.ASCII
 	}
@@ -106,7 +106,7 @@ func (l *prettyLogger) logInit(path string) {
 	)
 }
 
-func (l *prettyLogger) logStatus(status migrate.MigrationStatus) {
+func (l *prettyLogger) logStatus(status smidge.MigrationStatus) {
 	applied := status.Applied
 	pending := status.Pending
 
@@ -137,13 +137,13 @@ func (l *prettyLogger) logStatus(status migrate.MigrationStatus) {
 	fmt.Fprintln(l.stdout, output)
 }
 
-func (l *prettyLogger) logMigration(e migrate.Event) {
+func (l *prettyLogger) logMigration(e smidge.Event) {
 	var output string
 
 	switch e.Kind {
-	case migrate.EventSkip:
+	case smidge.EventSkip:
 		reason := "(already applied)"
-		if e.Direction == migrate.Down {
+		if e.Direction == smidge.Down {
 			reason = "(not applied)"
 		}
 
@@ -155,9 +155,9 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 			" ",
 			faintStyle.Render(reason),
 		)
-	case migrate.EventApply:
+	case smidge.EventApply:
 		dirStyle := upStyle
-		if e.Direction == migrate.Down {
+		if e.Direction == smidge.Down {
 			dirStyle = downStyle
 		}
 
@@ -175,7 +175,7 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 		if l.opts.verbose && e.SQL != "" {
 			output += "\n" + faintStyle.Render(e.SQL)
 		}
-	case migrate.EventDone:
+	case smidge.EventDone:
 		output = lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			doneStyle.Render("[DONE]"),
@@ -193,6 +193,6 @@ func (l *prettyLogger) logError(err error) {
 	fmt.Fprintf(l.stderr, "%s %v\n", errorStyle.Render("[ERR]"), err)
 }
 
-func panicUnhandled(kind migrate.EventKind) {
+func panicUnhandled(kind smidge.EventKind) {
 	panic(fmt.Sprintf("unhandled event kind: %q", kind))
 }
