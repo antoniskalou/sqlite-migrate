@@ -8,8 +8,67 @@ import (
 	"testing"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
+	"github.com/charmbracelet/colorprofile"
 	"go.followtheprocess.codes/snapshot"
 )
+
+func TestOutputWriter(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		noColor bool
+		isTTY   bool
+		want    colorprofile.Profile
+	}{
+		{
+			name:  "MIGRATE_NO_COLOR",
+			isTTY: true,
+			env:   map[string]string{"MIGRATE_NO_COLOR": "0"},
+			want:  colorprofile.ASCII,
+		},
+		{
+			name:    "noColor flag (TTY)",
+			isTTY:   true,
+			noColor: true,
+			want:    colorprofile.ASCII,
+		},
+		{
+			name:    "noColor flag (NoTTY)",
+			isTTY:   false,
+			noColor: true,
+			want:    colorprofile.NoTTY,
+		},
+		{
+			name:  "default (TTY)",
+			isTTY: true,
+			want:  colorprofile.ASCII,
+		},
+		{
+			name:  "default (NoTTY)",
+			isTTY: false,
+			want:  colorprofile.NoTTY,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.isTTY {
+				// force colorprofile to ignore that we're not a TTY
+				t.Setenv("CLICOLOR_FORCE", "1")
+			}
+
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			writer := newOutputWriter(io.Discard, tt.noColor)
+
+			if writer.Profile < tt.want {
+				t.Errorf("Profile = %v, want at least %v", writer.Profile, tt.want)
+			}
+		})
+	}
+}
 
 func TestPrettyLogger(t *testing.T) {
 	t.Parallel()
