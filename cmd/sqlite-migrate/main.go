@@ -221,12 +221,12 @@ func cmdInit(ctx commandContext) error {
 		return fmt.Errorf("failed to create migration dir: %w", err)
 	}
 
-	up := filepath.Join(rootDir, "000_init.up.sql")
+	up := filepath.Join(rootDir, "001_init.up.sql")
 	if err := writeIfNotExists(up, sql); err != nil {
 		return fmt.Errorf("failed to write %s migration: %w", up, err)
 	}
 
-	down := filepath.Join(rootDir, "000_init.down.sql")
+	down := filepath.Join(rootDir, "001_init.down.sql")
 	if err := writeIfNotExists(down, sql); err != nil {
 		return fmt.Errorf("failed to write %s migration: %w", down, err)
 	}

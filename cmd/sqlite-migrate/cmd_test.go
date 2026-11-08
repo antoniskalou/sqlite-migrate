@@ -29,8 +29,8 @@ func TestCmdInit(t *testing.T) {
 		}
 
 		for _, name := range []string{
-			"000_init.up.sql",
-			"000_init.down.sql",
+			"001_init.up.sql",
+			"001_init.down.sql",
 		} {
 			path := filepath.Join(ctx.rootDir, name)
 
@@ -49,8 +49,8 @@ func TestCmdInit(t *testing.T) {
 	})
 
 	t.Run("does not overwrite existing files", func(t *testing.T) {
-		upPath := filepath.Join(ctx.rootDir, "000_init.up.sql")
-		downPath := filepath.Join(ctx.rootDir, "000_init.down.sql")
+		upPath := filepath.Join(ctx.rootDir, "001_init.up.sql")
+		downPath := filepath.Join(ctx.rootDir, "001_init.down.sql")
 
 		originalUp := "-- custom up migration"
 		originalDown := "-- custom down migration"
@@ -91,8 +91,8 @@ func TestCmdInit(t *testing.T) {
 	})
 
 	t.Run("creates missing file without overwriting existing one", func(t *testing.T) {
-		upPath := filepath.Join(ctx.rootDir, "000_init.up.sql")
-		downPath := filepath.Join(ctx.rootDir, "000_init.down.sql")
+		upPath := filepath.Join(ctx.rootDir, "001_init.up.sql")
+		downPath := filepath.Join(ctx.rootDir, "001_init.down.sql")
 
 		originalUp := "-- keep my custom migration"
 

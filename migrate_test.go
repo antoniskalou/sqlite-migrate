@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	migrationT1Up   = "000_t1.up.sql"
-	migrationT1Down = "000_t1.down.sql"
-	migrationT2Up   = "001_t2.up.sql"
-	migrationT2Down = "001_t2.down.sql"
+	migrationT1Up   = "001_t1.up.sql"
+	migrationT1Down = "001_t1.down.sql"
+	migrationT2Up   = "002_t2.up.sql"
+	migrationT2Down = "002_t2.down.sql"
 )
 
 func TestMigrationLifecycle(t *testing.T) {
