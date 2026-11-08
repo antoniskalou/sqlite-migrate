@@ -1,0 +1,10 @@
+Database status            
+                           
+Version:  1                
+Pending:  1                
+                           
+Applied migrations:        
+  ✓ 001_create_users.up.sql
+                           
+Pending migrations:        
+  • 002_create_posts.up.sql

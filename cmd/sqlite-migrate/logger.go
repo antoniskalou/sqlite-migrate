@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	migrate "github.com/antoniskalou/sqlite-migrate"
 	"github.com/charmbracelet/colorprofile"
 )
@@ -108,58 +108,50 @@ func (l *prettyLogger) logStatus(status migrate.MigrationStatus) {
 	applied := status.Applied
 	pending := status.Pending
 
-	lines := []string{
+	version := renderLabel(
+		"Version:",
+		renderVersion(status.Version),
+	)
+
+	pendingCount := renderLabel(
+		"Pending:",
+		pendingStyle.Render(strconv.Itoa(len(pending))),
+	)
+
+	output := lipgloss.JoinVertical(
+		lipgloss.Top,
 		titleStyle.Render("Database status"),
 		"",
-		fmt.Sprintf("%-10s %s", "Version:",
-			versionStyle.Render(strconv.Itoa(status.Version))),
-		fmt.Sprintf("%-10s %s", "Pending:",
-			pendingStyle.Render(strconv.Itoa(len(pending)))),
+		version,
+		pendingCount,
 		"",
 		sectionStyle.Render("Applied migrations:"),
-	}
+		renderList(applied, "✓", upStyle),
+		"",
+		sectionStyle.Render("Pending migrations:"),
+		renderList(pending, "•", pendingStyle),
+	)
 
-	if len(applied) == 0 {
-		lines = append(lines, faintStyle.Render("  (none)"))
-	} else {
-		for _, migration := range applied {
-			lines = append(
-				lines,
-				upStyle.Render("  ✓ ")+filepath.Base(migration),
-			)
-		}
-	}
-
-	lines = append(lines, "", sectionStyle.Render("Pending migrations:"))
-
-	if len(pending) == 0 {
-		lines = append(lines, faintStyle.Render("  (none)"))
-	} else {
-		for _, migration := range pending {
-			lines = append(
-				lines,
-				pendingStyle.Render("  • ")+filepath.Base(migration),
-			)
-		}
-	}
-
-	fmt.Fprintln(l.stdout, strings.Join(lines, "\n"))
+	fmt.Fprintln(l.stdout, output)
 }
 
 func (l *prettyLogger) logMigration(e migrate.Event) {
+	var output string
+
 	switch e.Kind {
 	case migrate.EventSkip:
-		var faintText string
-		if e.Direction == migrate.Up {
-			faintText = "(already applied)"
-		} else {
-			faintText = "(not applied)"
+		reason := "(already applied)"
+		if e.Direction == migrate.Down {
+			reason = "(not applied)"
 		}
 
-		fmt.Fprintf(l.stdout, "%s %s %s\n",
+		output = lipgloss.JoinHorizontal(
+			lipgloss.Top,
 			skipStyle.Render("[SKIP]"),
+			" ",
 			e.File,
-			faintStyle.Render(faintText),
+			" ",
+			faintStyle.Render(reason),
 		)
 	case migrate.EventApply:
 		dirStyle := upStyle
@@ -168,23 +160,31 @@ func (l *prettyLogger) logMigration(e migrate.Event) {
 		}
 
 		dir := strings.ToUpper(e.Direction.String())
-		fmt.Fprintf(l.stdout, "%s %s → user_version=%s\n",
+
+		output = lipgloss.JoinHorizontal(
+			lipgloss.Top,
 			dirStyle.Render("["+dir+"]"),
+			" ",
 			e.File,
-			versionStyle.Render(strconv.Itoa(e.Version)),
+			" → user_version=",
+			renderVersion(e.Version),
 		)
 
 		if l.opts.verbose && e.SQL != "" {
-			fmt.Fprintln(l.stdout, faintStyle.Render(e.SQL))
+			output += "\n" + faintStyle.Render(e.SQL)
 		}
 	case migrate.EventDone:
-		fmt.Fprintf(l.stdout, "%s user_version=%s\n",
+		output = lipgloss.JoinHorizontal(
+			lipgloss.Top,
 			doneStyle.Render("[DONE]"),
-			versionStyle.Render(strconv.Itoa(e.Version)),
+			" user_version=",
+			renderVersion(e.Version),
 		)
 	default:
 		panicUnhandled(e.Kind)
 	}
+
+	fmt.Fprintln(l.stdout, output)
 }
 
 func (l *prettyLogger) logError(err error) {

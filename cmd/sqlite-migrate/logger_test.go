@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	migrate "github.com/antoniskalou/sqlite-migrate"
+	"go.followtheprocess.codes/snapshot"
 )
 
 func TestPrettyLogger(t *testing.T) {
@@ -15,48 +16,22 @@ func TestPrettyLogger(t *testing.T) {
 
 	t.Run("logInit", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
-		logger := newPrettyLogger(
-			stdout,
-			io.Discard,
-			prettyLoggerOptions{
-				verbose: true,
-				noColor: true,
-			},
-		)
+		logger := newPrettyLogger(stdout, io.Discard, prettyLoggerOptions{})
 		logger.logInit("/some/file/path")
 
-		want := "[DONE] Migration directory initialised at /some/file/path\n"
-		assertOutput(t, stdout, want)
+		assertSnapshot(t, stdout.String())
 	})
 
 	t.Run("logStatus", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
-		logger := newPrettyLogger(
-			stdout,
-			io.Discard,
-			prettyLoggerOptions{
-				verbose: true,
-				noColor: true,
-			},
-		)
+		logger := newPrettyLogger(stdout, io.Discard, prettyLoggerOptions{})
 		logger.logStatus(migrate.MigrationStatus{
 			Version: 1,
 			Applied: []string{"001_create_users.up.sql"},
 			Pending: []string{"002_create_posts.up.sql"},
 		})
 
-		want := `Database status
-
-Version:   1
-Pending:   1
-
-Applied migrations:
-  ✓ 001_create_users.up.sql
-
-Pending migrations:
-  • 002_create_posts.up.sql` + "\n"
-
-		assertOutput(t, stdout, want)
+		assertSnapshot(t, stdout.String())
 	})
 
 	t.Run("logMigration", func(t *testing.T) {
@@ -64,7 +39,6 @@ Pending migrations:
 			name    string
 			event   migrate.Event
 			verbose bool
-			stdout  string
 		}{
 			{
 				name: "skip",
@@ -73,7 +47,6 @@ Pending migrations:
 					File:      "001_create_users.up.sql",
 					Direction: migrate.Up,
 				},
-				stdout: "[SKIP] 001_create_users.up.sql (already applied)\n",
 			},
 			{
 				name: "apply up",
@@ -83,7 +56,6 @@ Pending migrations:
 					Direction: migrate.Up,
 					Version:   1,
 				},
-				stdout: "[UP] 001_create_users.up.sql → user_version=1\n",
 			},
 			{
 				name: "apply down",
@@ -93,7 +65,6 @@ Pending migrations:
 					Direction: migrate.Down,
 					Version:   1,
 				},
-				stdout: "[DOWN] 001_create_users.down.sql → user_version=1\n",
 			},
 			{
 				name: "SQL shown when verbose",
@@ -105,7 +76,6 @@ Pending migrations:
 					SQL:       "create table users (id integer);",
 				},
 				verbose: true,
-				stdout:  "[UP] 001_create_users.up.sql → user_version=1\ncreate table users (id integer);\n",
 			},
 			{
 				name: "done",
@@ -114,20 +84,22 @@ Pending migrations:
 					Version:   2,
 					Direction: migrate.Up,
 				},
-				stdout: "[DONE] user_version=2\n",
 			},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				stdout := &bytes.Buffer{}
-				logger := newPrettyLogger(stdout, io.Discard, prettyLoggerOptions{
-					verbose: tt.verbose,
-					noColor: true,
-				})
+				logger := newPrettyLogger(
+					stdout,
+					io.Discard,
+					prettyLoggerOptions{
+						verbose: tt.verbose,
+					},
+				)
 				logger.logMigration(tt.event)
 
-				assertOutput(t, stdout, tt.stdout)
+				assertSnapshot(t, stdout.String())
 			})
 		}
 	})
@@ -135,14 +107,17 @@ Pending migrations:
 	t.Run("logError", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
-		logger := newPrettyLogger(stdout, stderr, prettyLoggerOptions{
-			noColor: true,
-		})
+		logger := newPrettyLogger(stdout, stderr, prettyLoggerOptions{})
 
 		logger.logError(fmt.Errorf("something went wrong"))
 
-		assertOutput(t, stdout, "") // nothing written to stdout
-		assertOutput(t, stderr, "[ERR] something went wrong\n")
+		t.Run("stdout", func(t *testing.T) {
+			assertSnapshot(t, stdout.String())
+		})
+
+		t.Run("stderr", func(t *testing.T) {
+			assertSnapshot(t, stderr.String())
+		})
 	})
 }
 
@@ -227,6 +202,17 @@ func TestJSONLoggerPanicsOnUnknownMigrationEvent(t *testing.T) {
 	newJsonLogger(stdout).logMigration(migrate.Event{
 		Kind: "unknown",
 	})
+}
+
+func assertSnapshot(t testing.TB, got string) {
+	t.Helper()
+
+	snap := snapshot.New(
+		t,
+		snapshot.WithFormatter(snapshot.TextFormatter()),
+	)
+
+	snap.Snap(got)
 }
 
 func assertOutput(t testing.TB, out *bytes.Buffer, want string) {
