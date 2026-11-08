@@ -1,13 +1,13 @@
 version: 2
-project_name: sqlite-migrate
+project_name: smidge
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: sqlite-migrate
-    main: ./cmd/sqlite-migrate
-    binary: sqlite-migrate
+  - id: smidge
+    main: ./cmd/smidge
+    binary: smidge
     ldflags:
       # strip debug info, make binaries smaller
       - -s -w
