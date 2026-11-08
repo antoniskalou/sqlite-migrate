@@ -1,0 +1,1 @@
+[DONE] Migration directory initialised at /some/file/path

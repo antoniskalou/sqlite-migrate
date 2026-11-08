@@ -1,0 +1,2 @@
+[UP] 001_create_users.up.sql → user_version=1
+create table users (id integer);
