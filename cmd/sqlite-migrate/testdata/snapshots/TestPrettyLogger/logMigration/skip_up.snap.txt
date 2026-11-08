@@ -1,1 +1,1 @@
-[SKIP] 001_create_users.up.sql (already applied)
+[33m[SKIP][m 001_create_users.up.sql [2m(already applied)[m

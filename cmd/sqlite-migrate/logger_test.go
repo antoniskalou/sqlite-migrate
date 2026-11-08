@@ -71,7 +71,8 @@ func TestOutputWriter(t *testing.T) {
 }
 
 func TestPrettyLogger(t *testing.T) {
-	t.Parallel()
+	// force colours for testing
+	t.Setenv("CLICOLOR_FORCE", "1")
 
 	t.Run("logInit", func(t *testing.T) {
 		stdout := &bytes.Buffer{}

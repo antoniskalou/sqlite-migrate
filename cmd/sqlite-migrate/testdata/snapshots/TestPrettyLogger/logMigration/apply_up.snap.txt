@@ -1,1 +1,1 @@
-[UP] 001_create_users.up.sql → user_version=1
+[32m[UP][m 001_create_users.up.sql → user_version=[1m1[m

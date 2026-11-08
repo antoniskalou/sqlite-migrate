@@ -1,1 +1,1 @@
-[DONE] Migration directory initialised at /some/file/path
+[94m[DONE][m Migration directory initialised at /some/file/path

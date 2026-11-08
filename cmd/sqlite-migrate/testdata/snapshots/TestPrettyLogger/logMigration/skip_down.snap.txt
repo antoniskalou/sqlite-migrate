@@ -1,1 +1,1 @@
-[SKIP] 001_create_users.down.sql (not applied)
+[33m[SKIP][m 001_create_users.down.sql [2m(not applied)[m

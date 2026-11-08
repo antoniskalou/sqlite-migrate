@@ -1,1 +1,1 @@
-[ERR] something went wrong
+[31m[ERR][m something went wrong

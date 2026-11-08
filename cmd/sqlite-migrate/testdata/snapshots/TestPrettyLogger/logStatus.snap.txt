@@ -1,10 +1,10 @@
-Database status            
+[1mDatabase status[m            
                            
-Version:  1                
-Pending:  1                
+Version:  [1m1[m                
+Pending:  [33m1[m                
                            
-Applied migrations:        
-  ✓ 001_create_users.up.sql
+[1mApplied migrations:[m        
+  [32m✓[m 001_create_users.up.sql
                            
-Pending migrations:        
-  • 002_create_posts.up.sql
+[1mPending migrations:[m        
+  [33m•[m 002_create_posts.up.sql
