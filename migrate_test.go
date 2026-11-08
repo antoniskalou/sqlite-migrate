@@ -10,7 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/antoniskalou/sqlite-migrate/internal/sqltest"
+	"github.com/antoniskalou/smidge/internal/sqltest"
 	_ "modernc.org/sqlite"
 )
 

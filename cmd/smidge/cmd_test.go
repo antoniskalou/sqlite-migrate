@@ -7,8 +7,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	migrate "github.com/antoniskalou/sqlite-migrate"
-	"github.com/antoniskalou/sqlite-migrate/internal/sqltest"
+	"github.com/antoniskalou/smidge"
+	"github.com/antoniskalou/smidge/internal/sqltest"
 )
 
 func TestCmdInit(t *testing.T) {

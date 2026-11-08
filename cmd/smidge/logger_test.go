@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	migrate "github.com/antoniskalou/sqlite-migrate"
+	"github.com/antoniskalou/smidge"
 	"github.com/charmbracelet/colorprofile"
 	"go.followtheprocess.codes/snapshot"
 )

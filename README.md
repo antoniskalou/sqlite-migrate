@@ -1,6 +1,6 @@
-# sqlite-migrate
+# smidge
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/antoniskalou/sqlite-migrate.svg)](https://pkg.go.dev/github.com/antoniskalou/sqlite-migrate)
+[![Go Reference](https://pkg.go.dev/badge/github.com/antoniskalou/smidge.svg)](https://pkg.go.dev/github.com/antoniskalou/smidge)
 
 A lightweight, cross-platform SQLite migration tool that tracks applied
 migrations using SQLite's built-in `user_version` pragma, without creating
@@ -10,7 +10,7 @@ a migration-history table.
 
 ## Usage
 
-`sqlite-migrate` can be used in two ways:
+`smidge` can be used in two ways:
 
 - **As a CLI** -- manage migrations from a terminal, shell script or CI/CD pipeline.
 - **As a Go library** -- run migrations directly from your application.
@@ -20,13 +20,13 @@ a migration-history table.
 Install the CLI:
 
 ```bash
-go install github.com/antoniskalou/sqlite-migrate/cmd/sqlite-migrate@latest
+go install github.com/antoniskalou/smidge/cmd/smidge@latest
 ```
 
 Check the available commands:
 
 ```bash
-sqlite-migrate --help
+smidge --help
 ```
 
 ### Go library
@@ -34,7 +34,7 @@ sqlite-migrate --help
 Install the library:
 
 ```bash
-go get github.com/antoniskalou/sqlite-migrate
+go get github.com/antoniskalou/smidge
 ```
 
 Example:
@@ -45,7 +45,7 @@ import (
   "log"
   "os"
 
-  "github.com/antoniskalou/sqlite-migrate"
+  "github.com/antoniskalou/smidge"
 )
 
 func main() {
@@ -81,7 +81,7 @@ SQLite provides a built-in integer setting called `user_version`, accessible
 through `PRAGMA user_version`. It is intended for application use and does not
 create a separate table. See the [SQLite documentation][2].
 
-`sqlite-migrate` uses this value to track the current migration version.
+`smidge` uses this value to track the current migration version.
 
 Migrations are stored in a directory configured by the user, defaulting to `./sql`.
 Each migration consists of an `.up.sql` file and, optionally, a corresponding
@@ -103,7 +103,7 @@ Migrations are executed in alphabetical order. After each migration,
 Deploy all pending migrations:
 
 ```bash
-$ sqlite-migrate deploy main.db
+$ smidge deploy main.db
 [UP] sql/001_create_users.up.sql → user_version=1
 [UP] sql/002_create_posts.up.sql → user_version=2
 [DONE] user_version=2
@@ -112,7 +112,7 @@ $ sqlite-migrate deploy main.db
 Check the migration status:
 
 ```bash
-$ sqlite-migrate status main.db
+$ smidge status main.db
 Database status
 
 Version:   2
@@ -129,7 +129,7 @@ Pending migrations:
 Running `deploy` again skips migrations that have already been applied:
 
 ```bash
-$ sqlite-migrate deploy main.db
+$ smidge deploy main.db
 [SKIP] sql\001_create_users.up.sql (already applied)
 [SKIP] sql\00s_create_posts.up.sql (already applied)
 [DONE] user_version=2
@@ -173,5 +173,5 @@ Copyright © 2026 Antonis Kalou.
 This project is licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
 See the [LICENSE](LICENSE) file for the full license text.
 
-[1]: https://pkg.go.dev/github.com/antoniskalou/sqlite-migrate
+[1]: https://pkg.go.dev/github.com/antoniskalou/smidge
 [2]: https://sqlite.org/pragma.html#pragma_user_version

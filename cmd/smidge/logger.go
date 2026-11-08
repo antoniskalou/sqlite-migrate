@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	migrate "github.com/antoniskalou/sqlite-migrate"
+	"github.com/antoniskalou/smidge"
 	"github.com/charmbracelet/colorprofile"
 )
 
