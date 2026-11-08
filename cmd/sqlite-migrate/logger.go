@@ -86,7 +86,7 @@ func newPrettyLogger(
 func newOutputWriter(w io.Writer, noColor bool) *colorprofile.Writer {
 	writer := colorprofile.NewWriter(w, os.Environ())
 
-	if noColor {
+	if _, envSet := os.LookupEnv("MIGRATE_NO_COLOR"); noColor || envSet {
 		// NoTTY to disable all colours and formatting.
 		//
 		// TODO: support ASCII instead (its more no-color compliant), however tests
