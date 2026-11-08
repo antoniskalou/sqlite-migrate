@@ -25,7 +25,7 @@ import (
 )
 
 // Version is the current version of the smidge library.
-const Version = "0.0.16"
+const Version = "0.0.17"
 
 // Sentinel errors returned by the smidge package.
 var (
