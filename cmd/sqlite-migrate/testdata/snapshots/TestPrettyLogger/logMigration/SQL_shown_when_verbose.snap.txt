@@ -1,2 +1,2 @@
-[UP] 001_create_users.up.sql → user_version=1
-create table users (id integer);
+[32m[UP][m 001_create_users.up.sql → user_version=[1m1[m
+[2mcreate table users (id integer);[m
