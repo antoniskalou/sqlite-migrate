@@ -59,12 +59,36 @@ func withCommandContext(f commandActionFunc) cli.ActionFunc {
 
 func main() {
 	dbPathArg := cli.StringArg{
-		Name:     "dbpath",
-		Required: true,
+		Name:      "dbpath",
+		UsageText: "DATABASE",
+		Required:  true,
 	}
 	cmd := &cli.Command{
 		Name:  "sqlite-migrate",
-		Usage: "migrate SQLite databases",
+		Usage: "manage SQLite database migrations",
+		Description: `A lightweight tool for managing SQLite migrations.
+
+Migration state is tracked using SQLite's PRAGMA user_version. Migration files
+on the filesystem define the available migrations.
+
+Examples:
+	# Start a new project in ./sql
+	sqlite-migrate init
+
+	# Print status of the database
+	sqlite-migrate status app.db
+
+	# Deploy all migrations
+	sqlite-migrate deploy app.db
+
+	# Roll back to version 1
+	sqlite-migrate rollback app.db --target 1
+
+	# Deploy migrations from different directory
+	sqlite-migrate --root ./fixed-sql deploy app.db
+
+	# Print status again, but in JSON
+	sqlite-migrate --json status app.db`,
 		Copyright: `Copyright © 2026 Antonis Kalou
 
 License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
@@ -83,15 +107,15 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 			},
 			&cli.BoolFlag{
 				Name:  "no-color",
-				Usage: "disable coloured and formatted output",
+				Usage: "disable ANSI colour output",
 			},
 			&cli.BoolFlag{
 				Name:  "json",
-				Usage: "output all events as JSON",
+				Usage: "emit command output as newline-delimited JSON",
 			},
 			&cli.StringFlag{
 				Name:  "root",
-				Usage: "root of the migration directory",
+				Usage: "directory containing SQL migration files",
 				Value: defaultMigrationDir,
 			},
 		},
@@ -99,7 +123,14 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 		Commands: []*cli.Command{
 			{
 				Name:  "init",
-				Usage: "initialise the SQL migration directory",
+				Usage: "create the migration directory and starter migration files",
+				Description: `Create the migration directory and starter migration files.
+
+Existing migration files will not be overwritten.
+					
+Examples:
+	sqlite-migrate init
+	sqlite-migrate init --root ./migrations`,
 				Action: withCommandContext(
 					func(ctx commandContext, cmd *cli.Command) error {
 						return cmdInit(ctx)
@@ -107,8 +138,14 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				),
 			},
 			{
-				Name:      "status",
-				Usage:     "print migration status of the database",
+				Name:  "status",
+				Usage: "show migration status for the database",
+				Description: `Show the current database version and migration status.
+
+Requires an existing database.
+					
+Examples:
+	sqlite-migrate status app.db`,
 				Arguments: []cli.Argument{&dbPathArg},
 				Action: withCommandContext(
 					func(ctx commandContext, cmd *cli.Command) error {
@@ -117,12 +154,22 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				),
 			},
 			{
-				Name:      "deploy",
-				Usage:     "apply all pending migrations",
+				Name:  "deploy",
+				Usage: "apply pending migrations",
+				Description: `Apply all pending migrations, optionally up to a target version.
+
+Creates a database if it doesn't already exist.
+
+Examples:
+	# Apply everything pending
+	sqlite-migrate deploy app.db
+
+	# Apply up to version 3
+	sqlite-migrate deploy app.db --target 3`,
 				Arguments: []cli.Argument{&dbPathArg},
 				Flags: []cli.Flag{&cli.IntFlag{
 					Name:  "target",
-					Usage: "specify target version",
+					Usage: "target migration version to apply (inclusive)",
 				}},
 				Action: withCommandContext(
 					func(ctx commandContext, cmd *cli.Command) error {
@@ -137,13 +184,25 @@ See https://www.gnu.org/licenses/agpl-3.0.html for details.`,
 				),
 			},
 			{
-				Name:      "rollback",
-				Usage:     "rollback all applied migrations",
+				Name:  "rollback",
+				Usage: "roll back migrations to a target version",
+				Description: `Roll back applied migrations to the specified version.
+
+Each migration being rolled back must have a corresponding down migration.
+
+Rolling back migrations may result in data loss. Be careful!
+					
+Examples:
+	# Roll back to version 2
+	sqlite-migrate rollback app.db --target 2
+
+	# Roll back everything
+	sqlite-migrate rollback app.db --target 0`,
 				Arguments: []cli.Argument{&dbPathArg},
 				Flags: []cli.Flag{&cli.IntFlag{
 					Name:     "target",
 					Required: true,
-					Usage:    "specify target version",
+					Usage:    "target migration version to roll back to (inclusive)",
 				}},
 				Action: withCommandContext(
 					func(ctx commandContext, cmd *cli.Command) error {
